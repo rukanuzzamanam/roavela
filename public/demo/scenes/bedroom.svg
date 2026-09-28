@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" preserveAspectRatio="xMidYMid slice">
+  <rect width="1200" height="900" fill="#e4ede7"/>
+  <rect y="690" width="1200" height="210" fill="#c9a882"/>
+  <!-- window with curtains -->
+  <rect x="780" y="140" width="300" height="340" fill="#fdf4ec"/>
+  <rect x="800" y="160" width="260" height="300" fill="#f4c49c"/>
+  <circle cx="930" cy="330" r="40" fill="#fff0cf"/>
+  <path d="M800 400 C880 360 980 380 1060 350 V460 H800Z" fill="#8a9a6a"/>
+  <path d="M770 130 h60 v380 q-30 10 -60 0z M1030 130 h60 v380 q-30 10 -60 0z" fill="#d9cbb2"/>
+  <!-- bed -->
+  <rect x="160" y="360" width="520" height="180" rx="20" fill="#6f4a2f"/>
+  <rect x="150" y="500" width="580" height="170" rx="24" fill="#fbf8f3"/>
+  <rect x="150" y="560" width="580" height="130" rx="24" fill="#2f7359"/>
+  <path d="M150 600 H730" stroke="#225c47" stroke-width="6"/>
+  <rect x="200" y="460" width="190" height="80" rx="30" fill="#fbf8f3" stroke="#eae0ce" stroke-width="4"/>
+  <rect x="430" y="460" width="190" height="80" rx="30" fill="#fbf8f3" stroke="#eae0ce" stroke-width="4"/>
+  <!-- bedside lamp -->
+  <rect x="740" y="560" width="80" height="130" fill="#b98a5e"/>
+  <path d="M760 500 h40 l14 50 h-68z" fill="#f4c49c"/><rect x="776" y="550" width="8" height="12" fill="#5f6d66"/>
+  <!-- art -->
+  <rect x="310" y="190" width="220" height="130" fill="#fbf8f3" stroke="#6f4a2f" stroke-width="8"/>
+  <path d="M320 300 L380 250 L430 280 L480 230 L520 300Z" fill="#cf6424" opacity="0.6"/>
+</svg>

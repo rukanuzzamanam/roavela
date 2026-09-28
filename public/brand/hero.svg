@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMax slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0f2a22"/>
+      <stop offset="0.45" stop-color="#2c5a4a"/>
+      <stop offset="0.72" stop-color="#d98a52"/>
+      <stop offset="0.86" stop-color="#f3c08e"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fff1d6"/>
+      <stop offset="0.5" stop-color="#f8cf94" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#f3a86a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="road" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b3a36"/>
+      <stop offset="1" stop-color="#1d1f1d"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#sky)"/>
+  <circle cx="1120" cy="560" r="220" fill="url(#sun)"/>
+  <circle cx="1120" cy="560" r="58" fill="#fff0d2"/>
+  <!-- distant ranges -->
+  <path d="M0 610 L120 560 L230 590 L360 520 L480 570 L600 530 L720 575 L860 505 L980 560 L1100 520 L1240 575 L1380 525 L1500 560 L1600 540 V900 H0Z" fill="#8a7a86" opacity="0.55"/>
+  <path d="M0 650 L140 590 L260 630 L400 570 L520 620 L660 575 L800 630 L940 580 L1080 635 L1220 590 L1360 640 L1480 600 L1600 625 V900 H0Z" fill="#4f6b63"/>
+  <!-- escarpment -->
+  <path d="M0 700 C160 660 260 640 380 655 C480 668 540 640 640 648 L700 640 L700 700 C820 690 960 670 1100 690 C1240 710 1400 680 1600 700 V900 H0Z" fill="#2d5345"/>
+  <!-- eucalypt trees on the ridge -->
+  <g fill="#1c3d31">
+    <path d="M180 690 q-18-40 0-70 q18 30 0 70z"/>
+    <path d="M214 686 q-14-32 0-56 q14 24 0 56z"/>
+    <path d="M1320 702 q-20-44 0-78 q20 34 0 78z"/>
+    <path d="M1360 700 q-14-32 0-56 q14 24 0 56z"/>
+    <path d="M1460 706 q-18-40 0-70 q18 30 0 70z"/>
+  </g>
+  <!-- foreground hills -->
+  <path d="M0 780 C220 730 420 740 620 770 C760 790 860 790 980 770 C1180 735 1400 740 1600 770 V900 H0Z" fill="#1a3a2f"/>
+  <!-- winding road -->
+  <path d="M760 900 C780 840 900 800 1000 770 C1060 752 1090 735 1108 712 L1122 712 C1110 740 1080 760 1030 780 C930 818 850 850 860 900Z" fill="url(#road)"/>
+  <path d="M810 900 C826 848 920 806 1012 776 C1066 758 1096 740 1115 713" fill="none" stroke="#f3c08e" stroke-width="4" stroke-dasharray="18 16" stroke-linecap="round"/>
+  <path d="M0 840 C240 810 480 830 700 860 L760 900 H0Z" fill="#132c24"/>
+  <path d="M900 900 C1100 850 1350 835 1600 850 V900Z" fill="#132c24"/>
+</svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#bfe4ee"/><stop offset="1" stop-color="#f6fbfa"/></linearGradient>
+    <linearGradient id="w" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1aa3b3"/><stop offset="0.6" stop-color="#5fd3cf"/><stop offset="1" stop-color="#a7ece2"/></linearGradient>
+  </defs>
+  <rect width="1200" height="900" fill="url(#s)"/>
+  <path d="M0 400 C200 380 300 400 420 390 L420 420 L0 430Z" fill="#6c9278"/>
+  <path d="M760 395 C900 370 1060 380 1200 370 V420 L760 420Z" fill="#6c9278"/>
+  <rect y="410" width="1200" height="490" fill="url(#w)"/>
+  <!-- white sand crescent -->
+  <path d="M0 900 V720 C220 640 520 620 800 650 C980 670 1100 700 1200 690 V900Z" fill="#fbfaf5"/>
+  <path d="M0 720 C220 640 520 620 800 650 C980 670 1100 700 1200 690" fill="none" stroke="#a7ece2" stroke-width="10"/>
+  <!-- dolphin fins & boat -->
+  <g fill="#1d6f7d"><path d="M420 520 q10 -26 30 -30 q-8 14 -4 30z"/><path d="M480 540 q10 -22 26 -26 q-6 12 -4 26z"/></g>
+  <path d="M760 500 h90 l-14 18 h-62z" fill="#fbfaf5"/><path d="M800 500 V440 L840 494Z" fill="#cf6424"/>
+  <!-- banksia shrubs -->
+  <g fill="#3f6a3e"><circle cx="80" cy="720" r="44"/><circle cx="150" cy="740" r="34"/><circle cx="1130" cy="700" r="40"/></g>
+  <g fill="#e5813f"><rect x="72" y="700" width="10" height="22" rx="4"/><rect x="1122" y="684" width="10" height="22" rx="4"/></g>
+</svg>

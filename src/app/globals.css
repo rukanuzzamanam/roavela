@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+/*
+ * Roavela design tokens.
+ * Eucalypt greens and sandstone neutrals from the Australian bush, with a sunset-ochre accent
+ * reserved for primary calls to action and price emphasis.
+ */
+@theme {
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
+
+  --color-ink: #14201b;
+  --color-ink-soft: #3d4a44;
+  --color-mist: #5f6d66;
+
+  --color-eucalypt-50: #eef5f1;
+  --color-eucalypt-100: #d6e8de;
+  --color-eucalypt-200: #afd1bf;
+  --color-eucalypt-300: #7fb39a;
+  --color-eucalypt-400: #4f9075;
+  --color-eucalypt-500: #2f7359;
+  --color-eucalypt-600: #225c47;
+  --color-eucalypt-700: #1c4a3a;
+  --color-eucalypt-800: #183d31;
+  --color-eucalypt-900: #122e25;
+
+  --color-ochre-50: #fdf4ec;
+  --color-ochre-100: #fae3cf;
+  --color-ochre-200: #f4c49c;
+  --color-ochre-300: #eda066;
+  --color-ochre-400: #e5813f;
+  --color-ochre-500: #cf6424;
+  --color-ochre-600: #b0511c;
+  --color-ochre-700: #8a3f18;
+
+  --color-sand-50: #fbf8f3;
+  --color-sand-100: #f5efe4;
+  --color-sand-200: #eae0ce;
+  --color-sand-300: #d9cbb2;
+
+  --radius-card: 1.25rem;
+  --shadow-card: 0 1px 2px rgb(20 32 27 / 0.06), 0 8px 24px -12px rgb(20 32 27 / 0.18);
+  --shadow-float: 0 12px 40px -12px rgb(20 32 27 / 0.28);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+  body {
+    @apply bg-sand-50 font-sans text-ink antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-display tracking-tight;
+    font-optical-sizing: auto;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-eucalypt-500;
+  }
+  ::selection {
+    @apply bg-eucalypt-200 text-ink;
+  }
+}
+
+@utility container-page {
+  @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+}
+
+/* The dashed "road" line used as a brand motif. */
+@utility road-line {
+  background-image: linear-gradient(to right, currentColor 50%, transparent 50%);
+  background-size: 14px 2px;
+  background-repeat: repeat-x;
+  background-position: center;
+  height: 2px;
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9cc3d4"/><stop offset="0.7" stop-color="#e8ddc8"/></linearGradient>
+    <linearGradient id="haze" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6d8fa3"/><stop offset="1" stop-color="#8fa9a8"/></linearGradient>
+  </defs>
+  <rect width="1200" height="900" fill="url(#s)"/>
+  <path d="M0 470 L160 430 L300 455 L470 410 L640 450 L800 405 L980 445 L1200 415 V900 H0Z" fill="url(#haze)" opacity="0.8"/>
+  <path d="M0 540 C200 500 380 520 520 505 C700 488 880 520 1200 490 V900 H0Z" fill="#4e7a6c"/>
+  <!-- sandstone escarpment -->
+  <path d="M640 900 L640 520 L700 500 L760 515 L820 470 L880 480 L930 440 L1000 455 L1060 430 L1200 450 V900Z" fill="#b8835a"/>
+  <path d="M640 520 L700 500 L760 515 L820 470 L880 480 L930 440 L1000 455 L1060 430 L1200 450 V520 L640 560Z" fill="#cf9c6c"/>
+  <!-- three rock pillars -->
+  <path d="M470 900 V560 q20-40 40 0 V900Z M530 900 V540 q24-46 48 0 V900Z M598 900 V575 q18-34 36 0 V900Z" fill="#a8724c"/>
+  <path d="M0 680 C180 640 360 660 520 690 C700 720 900 690 1200 700 V900 H0Z" fill="#2f5f4d"/>
+  <g fill="#244a3c">
+    <path d="M90 690 q-26-60 0-104 q26 44 0 104z"/><path d="M140 684 q-18-44 0-78 q18 34 0 78z"/>
+    <path d="M1040 706 q-26-60 0-104 q26 44 0 104z"/><path d="M1100 700 q-18-44 0-78 q18 34 0 78z"/>
+  </g>
+  <path d="M0 800 C300 760 700 780 1200 790 V900 H0Z" fill="#1e4034"/>
+</svg>

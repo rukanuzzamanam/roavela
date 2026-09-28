@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7fc0d8"/><stop offset="1" stop-color="#e9f3f1"/></linearGradient>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1f7f95"/><stop offset="1" stop-color="#5fc1c4"/></linearGradient>
+  </defs>
+  <rect width="1200" height="900" fill="url(#s)"/>
+  <circle cx="930" cy="170" r="60" fill="#fff6dd"/>
+  <rect y="430" width="1200" height="470" fill="url(#sea)"/>
+  <!-- headland with lighthouse -->
+  <path d="M0 430 C120 360 260 350 380 400 C420 416 440 430 460 440 L0 520Z" fill="#4b7a55"/>
+  <path d="M0 520 L460 440 C420 480 300 520 0 560Z" fill="#8a6a4c"/>
+  <rect x="236" y="300" width="22" height="80" fill="#fbfaf5"/><path d="M232 300 h30 l-15 -22z" fill="#cf6424"/>
+  <!-- waves -->
+  <g fill="none" stroke="#e7f6f4" stroke-width="5" stroke-linecap="round" opacity="0.8">
+    <path d="M520 540 q40 -14 80 0 t80 0"/><path d="M760 600 q40 -14 80 0 t80 0"/><path d="M380 640 q40 -14 80 0 t80 0"/>
+  </g>
+  <!-- beach -->
+  <path d="M0 760 C240 690 520 670 800 700 C960 716 1080 730 1200 720 V900 H0Z" fill="#f1e2c2"/>
+  <path d="M0 760 C240 690 520 670 800 700 C960 716 1080 730 1200 720" fill="none" stroke="#fff" stroke-width="8" opacity="0.8"/>
+  <!-- dune grass & beach house -->
+  <path d="M860 700 L860 630 L940 590 L1020 630 L1020 700Z" fill="#fbfaf5"/>
+  <path d="M846 636 L940 584 L1034 636" fill="none" stroke="#2f7359" stroke-width="14" stroke-linejoin="round"/>
+  <rect x="900" y="645" width="30" height="30" fill="#7fc0d8"/><rect x="956" y="645" width="30" height="55" fill="#cf6424"/>
+  <g stroke="#6f8f55" stroke-width="4" stroke-linecap="round">
+    <path d="M1060 730 l-8 -34 M1070 730 l2 -40 M1080 730 l10 -30"/><path d="M800 715 l-8 -30 M810 715 l4 -36"/>
+  </g>
+</svg>

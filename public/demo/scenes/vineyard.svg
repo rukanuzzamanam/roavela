@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2b27a"/><stop offset="0.6" stop-color="#f8dcb0"/></linearGradient>
+  </defs>
+  <rect width="1200" height="900" fill="url(#s)"/>
+  <circle cx="300" cy="300" r="70" fill="#fff0cf"/>
+  <path d="M0 420 C200 370 420 390 620 360 C820 330 1000 380 1200 350 V900 H0Z" fill="#9b8f6a" opacity="0.7"/>
+  <path d="M0 480 C240 430 520 470 760 440 C940 418 1080 450 1200 430 V900 H0Z" fill="#a9b26c"/>
+  <!-- homestead on hill -->
+  <path d="M820 440 v-40 l50 -30 50 30 v40z" fill="#f6efe0"/><path d="M808 404 l62 -40 62 40" fill="none" stroke="#8a3f18" stroke-width="12" stroke-linejoin="round"/>
+  <g fill="#3f6a3e"><circle cx="780" cy="430" r="22"/><circle cx="960" cy="426" r="26"/></g>
+  <!-- vine rows converging -->
+  <path d="M0 560 C300 520 800 520 1200 540 V900 H0Z" fill="#7d9a4a"/>
+  <g fill="none" stroke="#3f6a2e" stroke-width="18" stroke-linecap="round">
+    <path d="M600 540 L-200 900"/><path d="M600 540 L0 900"/><path d="M600 540 L200 900"/><path d="M600 540 L400 900"/>
+    <path d="M600 540 L600 900"/><path d="M600 540 L800 900"/><path d="M600 540 L1000 900"/><path d="M600 540 L1200 900"/><path d="M600 540 L1400 900"/>
+  </g>
+  <g fill="#6b2e4a" opacity="0.8">
+    <circle cx="300" cy="760" r="8"/><circle cx="470" cy="800" r="8"/><circle cx="720" cy="780" r="8"/><circle cx="900" cy="760" r="8"/>
+  </g>
+</svg>

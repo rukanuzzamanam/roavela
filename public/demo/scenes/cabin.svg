@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#23413d"/><stop offset="0.55" stop-color="#6a7f86"/><stop offset="1" stop-color="#e4b78a"/></linearGradient>
+  </defs>
+  <rect width="1200" height="900" fill="url(#s)"/>
+  <g fill="#fff4dc"><circle cx="180" cy="120" r="2.5"/><circle cx="320" cy="80" r="2"/><circle cx="520" cy="140" r="2"/><circle cx="880" cy="90" r="2.5"/><circle cx="1040" cy="160" r="2"/></g>
+  <circle cx="960" cy="200" r="42" fill="#fbf1d8"/>
+  <path d="M0 520 C200 470 400 500 600 470 C800 440 1000 480 1200 460 V900 H0Z" fill="#2f4f45"/>
+  <!-- tall gums -->
+  <g fill="#1c3a31">
+    <path d="M140 640 q-50 -160 0 -300 q50 140 0 300z"/><path d="M240 650 q-36 -120 0 -220 q36 100 0 220z"/>
+    <path d="M980 650 q-50 -170 0 -320 q50 150 0 320z"/><path d="M1080 660 q-36 -120 0 -220 q36 100 0 220z"/>
+  </g>
+  <!-- cabin -->
+  <path d="M430 700 V540 L600 430 L770 540 V700Z" fill="#6f4a2f"/>
+  <path d="M400 560 L600 410 L800 560" fill="none" stroke="#2b1d14" stroke-width="22" stroke-linejoin="round"/>
+  <g stroke="#5a3b25" stroke-width="4"><path d="M430 580 H770 M430 620 H770 M430 660 H770"/></g>
+  <rect x="470" y="580" width="90" height="70" rx="4" fill="#f6c46a"/><rect x="640" y="590" width="70" height="110" rx="4" fill="#f6c46a"/>
+  <rect x="690" y="440" width="36" height="70" fill="#4a3324"/>
+  <path d="M708 430 q-20 -30 6 -60 q-12 30 12 50" fill="none" stroke="#c9c2b5" stroke-width="6" stroke-linecap="round" opacity="0.7"/>
+  <path d="M0 700 C300 680 900 690 1200 700 V900 H0Z" fill="#1f3a31"/>
+  <ellipse cx="600" cy="720" rx="200" ry="14" fill="#f6c46a" opacity="0.25"/>
+</svg>
