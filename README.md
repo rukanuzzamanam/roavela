@@ -4,7 +4,46 @@
 
 Roavela is an Australian travel marketplace built around one idea: discover stays and weekend escapes by **how far you want to drive**. It starts with Sydney as the primary origin (Blue Mountains, Hunter Valley, Kiama, Jervis Bay…), but nothing in the architecture is tied to Sydney, NSW or Australia.
 
-> **Status: Phase 1 (foundation).** Architecture, database, authentication, design system, homepage and demo search are built. Booking, payments, host portal, admin tools, explore, trip planner and destination SEO pages come in later phases — see [Roadmap](#roadmap).
+> **Status: Phase 2 (customer marketplace).** Travellers can search (with filters, sorting and pagination), open a full property page, preview a price, save stays, manage their profile and reset a forgotten password. **Online booking and payments are not available yet** — the Reserve button leads to a clearly labelled preview and nothing is booked or charged. Host portal, admin tools, `/explore`, the trip planner and destination guides come in later phases — see [Roadmap](#roadmap).
+
+## Phase 2 at a glance
+
+| Route | What it does |
+|---|---|
+| `/search` | Search by origin, destination (`?destination=`), max drive, dates and guests. Filters: price, type, bedrooms, bathrooms, capacity and amenities. Sort by recommended, price, rating or estimated drive. Server-side pagination (12 per page). List and map views. Every state lives in the URL. |
+| `/stays/[slug]` | Property page: gallery (full-screen, keyboard-navigable), highlights, grouped amenities, house rules, cancellation policy, approximate-area map with nearby attractions, review category averages, host info, sticky booking-preview card and a mobile bottom bar. |
+| `/stays/[slug]/reserve` | Booking **preview** only. Re-validates availability and shows the estimated total. States that no booking was made and nothing was charged. Performs no writes. |
+| `/saved` | The signed-in traveller's saved stays, paginated. |
+| `/account` | Dashboard: profile, saved-stays preview, read-only trip history (with an empty state when there are no bookings). |
+| `/account/profile` | Edit name and phone. Email is read-only until verified email change exists. |
+| `/forgot-password`, `/reset-password` | Secure password reset (see [Password reset](#password-reset)). |
+| `/destinations/[slug]` | Placeholder destination page linking to stays (`noindex` until full guides exist). |
+
+**Database changes in Phase 2:** none. `Favourite` and `PasswordResetToken` already existed from Phase 1, so no migration was needed. New amenity catalogue entries (heating, dryer, workspace, beach access, mountain and vineyard views) are data rows created by the seed.
+
+### Search architecture
+
+1. `parseSearchParams` validates every URL parameter with Zod. Invalid or empty values are dropped rather than failing the page. `?to=` and `?guests=` are accepted as aliases.
+2. `buildPropertyWhere` builds a Prisma filter: `PUBLISHED` only, demo visibility, capacity, price, type, amenities (all selected must match), destination (including child places), a coarse drive-time filter from stored `DriveEstimate` rows, and date availability. Availability uses the same half-open overlap rules as the database's double-booking constraint.
+3. **Phase A:** lightweight sort keys for every match (capped at 2,000) are loaded. Drive time is refined per property, then results are ranked and the requested page is sliced — so totals are exact.
+4. **Phase B:** full card data (images, amenities, favourite state) is loaded for that page's ids only.
+
+The map view plots every match. All public coordinates are rounded to about 1 km (`approximateLocation`), and street addresses never leave the server.
+
+### Maps and routing
+
+- **Maps:** every map renders through `<MapView>`, and `resolveMapProvider()` picks the implementation. Only the **fallback** schematic map exists today. It needs no key and ships no client JavaScript, and its caption states it is not a road map. Setting `MAP_PROVIDER=mapbox|google` without an implementation or key falls back safely. Property pages show an approximate *area*, never a pin.
+- **Routing:** search reads stored origin → destination estimates plus a heuristic local leg (`services/drive-time.ts`), so drive times are always labelled *estimated*. `RoutingProvider` (`getDrivingDistance`, `getDrivingDuration`, `estimateDrive`) is the interface a Mapbox or Google routing implementation would provide; its results are written as `ROUTING_API` estimates.
+
+### Password reset
+
+- Tokens are 256-bit random values; only a SHA-256 hash is stored.
+- Tokens expire after `PASSWORD_RESET_TOKEN_TTL_MINUTES` (default 30) and are single-use via an atomic claim that is safe under concurrency.
+- A new request invalidates earlier unused tokens.
+- A successful reset revokes **all sessions** and removes the user's remaining tokens.
+- The response is identical whether or not the email exists. The email is sent fire-and-forget, and per-email rate limiting is silent.
+- Email goes through Resend when `RESEND_API_KEY` is set. Otherwise the development console adapter prints the message, including the link, **in development only**. Tokens are never shown in the UI.
+- The reset page uses `Referrer-Policy: no-referrer` and shows clear expired, used and invalid states.
 
 ---
 
@@ -73,15 +112,19 @@ public/
   brand/hero.svg           original illustration
   demo/scenes/*.svg        original demo illustrations (no stock/borrowed photos)
 src/
-  app/                     routes: /, /search, /stays/[slug], /login, /signup, /account, /host, /admin
+  app/                     routes: /, /search, /stays/[slug](/reserve), /saved, /account(/profile),
+                           /login, /signup, /forgot-password, /reset-password, /destinations/[slug], /host, /admin
                            + not-found, forbidden, error, global-error, loading
   components/
     ui/                    Button, Input, Select, DatePicker, Modal, Card, Badge, Rating, Skeleton,
                            EmptyState, ErrorState, GuestSelector, PriceBreakdown, Logo, Icon
     layout/                Navbar, MobileMenu, Footer
-    property/              PropertyCard, PropertyImage, FavouriteButton, StayQuoteForm
+    property/              PropertyCard, PropertyImage, PropertyGallery, AmenityList, ReviewSummary,
+                           BookingCard, LocationSection, FavouriteButton, StayQuoteForm
     destination/           DestinationCard
-    search/                SearchBar, FiltersPanel, ResultsMap, SortSelect
+    search/                SearchBar, FiltersPanel, SortSelect
+    maps/                  MapView, MapProvider registry, FallbackMap
+    account/               ProfileForm
     auth/                  AuthForm, AuthShell
   config/                  amenities catalogue, search options, homepage collections, site
   lib/                     pure logic (pricing, dates, geo, permissions, validation)
@@ -125,15 +168,28 @@ npm run dev                      # http://localhost:3000
 
 ### Environment variables
 
-See `.env.example` for the full list. Required for Phase 1:
+See `.env.example` for the full list. Required:
 
 | Variable | Purpose |
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `AUTH_SECRET` | ≥ 32 random characters (`node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`) |
-| `APP_URL` | Public base URL |
+| `APP_URL` | Public base URL (also used to build password-reset links) |
 
-Optional: `SHADOW_DATABASE_URL`, `SHOW_DEMO_LISTINGS`, `SEED_DEMO_PASSWORD`, `ANALYTICS_PROVIDER`, `NEXT_PUBLIC_MAPBOX_TOKEN`. Stripe, Cloudinary, Resend and AI variables are placeholders for later phases; nothing breaks when they are empty.
+Optional:
+
+| Variable | Purpose |
+|---|---|
+| `SHADOW_DATABASE_URL`, `DATABASE_POOL_MAX`, `DATABASE_IDLE_TIMEOUT_MS` | Migration shadow DB and pool tuning (`prisma dev` needs `DATABASE_IDLE_TIMEOUT_MS=1`) |
+| `SHOW_DEMO_LISTINGS` | Show demo listings in production builds (never for a public launch) |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Transactional email. Without a key, emails are logged in development only |
+| `PASSWORD_RESET_TOKEN_TTL_MINUTES` | Reset-link lifetime (default 30, min 5) |
+| `MAP_PROVIDER`, `NEXT_PUBLIC_MAPBOX_TOKEN`, `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Map provider selection. Only the fallback is implemented, so any other value falls back |
+| `ROUTING_PROVIDER` | `heuristic` (the only implementation today) |
+| `ANALYTICS_PROVIDER` | `console` or `none` |
+| `SEED_DEMO_PASSWORD` | Password for seeded demo accounts |
+
+Stripe, Cloudinary and AI variables are placeholders for later phases. Nothing breaks when they are empty.
 
 ### Demo accounts
 
@@ -160,6 +216,17 @@ The seed creates `admin@demo.roavela.test`, `host@demo.roavela.test` and `guest@
 
 - **Unit** (`tests/unit`): commission/fee maths (incl. the $800 example and rounding), stay pricing (weekend rates, overrides), date handling (exclusive check-out, DST, timezone "today"), drive-time estimates, role permissions and host-ownership checks, password hashing, session tokens, auth validation (role injection ignored), open-redirect protection, rate limiting, search-parameter parsing and query building.
 - **Integration** (`tests/integration`): the database rejects overlapping bookings (including a 5-way concurrent race where exactly one wins), back-to-back and cancelled bookings are allowed, and search excludes booked, blocked, unpublished and too-small properties.
+- **Phase 2 unit** (`tests/unit/phase2.test.ts`):
+  - search: `?destination=`/`?to=`/`?guests=` aliases, page validation, empty form fields, filter counting, pagination maths, deterministic sort tie-breaks
+  - coordinate rounding and profile validation
+- **Phase 2 integration** (`tests/integration/marketplace.test.ts`), using isolated fixtures:
+  - search: destination, capacity, price and amenity filters; demo isolation; no exact coordinates; server-side pagination and clamping; price and rating sorts
+  - property detail visibility, and server-side quotes (including booked dates and too many guests)
+  - favourites: save, duplicate prevention, removal, visibility rules, authorisation, and a forged `userId` being ignored
+  - profile update authorisation
+  - password reset: hashing, expiry, invalidation, single use, session revocation, concurrent use
+
+Run `npm run test:integration` with the database running. Tests create and delete their own data and don't depend on the seed.
 
 ## Stripe test setup (later phase)
 
@@ -180,27 +247,41 @@ Payments are not implemented in Phase 1. The schema already models `Payment` and
 - **Authorisation:** capability checks (`src/lib/permissions.ts`) enforced server-side in every protected page and Server Action (`requirePermission` / `authorize`). Non-authorised roles get a real 403.
 - **CSRF:** Server Actions are POST-only and Next.js verifies the `Origin` header against `Host`. The session cookie is `SameSite=Lax`.
 - **Validation:** Zod on all inputs. URL search params degrade safely, and redirect targets are restricted to same-origin paths.
-- **Rate limiting:** sign-in (per IP and per email) and sign-up (per IP) via a pluggable limiter.
+- **Rate limiting:** a pluggable limiter covers:
+  - sign-in (per IP and per email)
+  - sign-up (per IP)
+  - password-reset requests (per IP, plus a silent per-email limit) and submissions
+  - profile updates and favourites (per user)
+- **Never trusted from the client:** user id, role, ownership, prices and fees. Actions derive the user from the session. Quotes are computed from database prices and the active fee schedule.
+- **Location privacy:** public data carries only a locality and coordinates rounded to about 1 km. Property maps show an area, not a pin.
+- **Structured data:** JSON-LD is only emitted for non-demo listings, and it is escaped against `</script>` injection. Demo listings are `noindex, nofollow`.
 - **Headers:** `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, HSTS and `Permissions-Policy`. `X-Powered-By` is removed.
 - **Errors:** users see generic messages; server logs never include secrets or values from failed env validation.
 - **Privacy:** exact property addresses are not exposed publicly, and reviewer names are shortened.
 
-## Known limitations (Phase 1)
+## Known limitations (Phase 2)
 
-- No booking, checkout, payments, host portal, admin moderation, `/explore`, `/trip-planner` or destination pages yet.
-- Forgot-password: the token model exists; the flow and email delivery come in Phase 2.
-- The rate limiter is **in-memory** (single instance only).
-- Drive times are hand-entered regional estimates plus a heuristic local leg — approximate by design until a routing API is connected.
-- The map view is a schematic (relative positions, no roads) until a Mapbox/Google key and SDK are added.
-- No Content-Security-Policy yet (needs nonce support for Next inline scripts).
-- Search returns up to 48 results (no pagination yet), and price filters use the base nightly rate.
-- Demo images are original illustrations, not photos.
-- Only one origin (Sydney) is seeded.
+- **Not built yet:**
+  - online booking, checkout, payments, host portal, admin moderation, `/explore`, the trip planner, review submission, messaging and full destination guides
+  - "Reserve" only opens a preview
+- **Search ranking** runs on lightweight keys in memory for up to 2,000 matches per query. Beyond that, ranking (rating smoothing, per-property drive time) should move into SQL or materialised columns.
+- **Price filters and price sorting** use the base nightly rate. With dates selected, sorting uses the stay total.
+- **Rate limiting** is **in-memory**, so it only works on a single instance.
+- **Drive times** are estimates: hand-entered regional figures plus a heuristic local leg. Only the fallback map exists, and it has no roads or basemap.
+- **Password reset:**
+  - Reset links carry the token in the query string, so request logs on a hosting platform could record it. It is short-lived and single-use.
+  - Resend delivery is implemented against Resend's documented API but has **not** been exercised with a live key.
+- **Account:**
+  - There's no email verification or email change.
+  - There are no profile photos, because image uploads come later.
+  - Trip history is read-only.
+- **No Content-Security-Policy yet.** It needs nonce support for Next inline scripts.
+- **Demo data:** images are original illustrations, and only one origin (Sydney) is seeded.
 
 ## Roadmap
 
 1. ✅ **Phase 1** — architecture, database, auth, design system, homepage, demo search
-2. Customer marketplace (forgot password, profile, full property page, map provider)
+2. ✅ **Phase 2** — customer marketplace: search, filters, pagination, property page, booking preview, favourites, account, password reset, map/routing abstractions
 3. Host portal and 8-step onboarding, compliance submissions
 4. Booking engine (availability calendar, holds, cancellation)
 5. Admin portal (moderation, suspensions, compliance review, fee configuration, audit log UI)
