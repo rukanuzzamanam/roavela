@@ -10,6 +10,7 @@ export async function Navbar() {
   const user = await getCurrentUser().catch(() => null);
 
   const links: NavLink[] = [{ href: "/search", label: "Find a stay" }];
+  if (user && can(user.role, "favourite:manage")) links.push({ href: "/saved", label: "Saved" });
   if (user && can(user.role, "host:portal")) links.push({ href: "/host", label: "Host portal" });
   if (user && can(user.role, "admin:portal")) links.push({ href: "/admin", label: "Admin" });
 
