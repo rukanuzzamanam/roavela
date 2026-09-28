@@ -1,0 +1,676 @@
+// Roavela data model.
+//
+// Conventions
+// - Money is stored as integer minor units (cents) alongside an ISO-4217 currency code.
+// - Percentages are stored as basis points (1% = 100 bps).
+// - Stay dates are calendar dates (@db.Date); checkOut / endDate are EXCLUSIVE.
+// - Rows created by the seed script carry `isDemo = true` and must never be presented as genuine listings.
+// - Overlapping PENDING/CONFIRMED bookings are additionally rejected by a PostgreSQL exclusion
+//   constraint added in the initial migration (Prisma cannot express EXCLUDE constraints).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum Role {
+  CUSTOMER
+  HOST
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum HostOnboardingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  SUBMITTED
+  COMPLETE
+}
+
+enum PropertyType {
+  CABIN
+  COTTAGE
+  BEACH_HOUSE
+  APARTMENT
+  FARM_STAY
+  TINY_HOME
+  FAMILY_HOUSE
+  VILLA
+  GLAMPING
+  OTHER
+}
+
+/// Only PUBLISHED properties are publicly searchable.
+enum PropertyStatus {
+  DRAFT
+  PENDING_REVIEW
+  PUBLISHED
+  PAUSED // paused by the host
+  REJECTED // rejected at admin review
+  SUSPENDED // suspended by an admin
+  ARCHIVED
+}
+
+enum CancellationPolicy {
+  FLEXIBLE
+  MODERATE
+  STRICT
+}
+
+enum AmenityCategory {
+  ESSENTIALS
+  FEATURES
+  FAMILY
+  ACCESSIBILITY
+  OUTDOOR
+  SETTING // beach, mountain, vineyard, farm …
+}
+
+enum BlockedDateSource {
+  HOST
+  ADMIN
+  ICAL_IMPORT
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  REQUIRES_PAYMENT
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  PARTIALLY_REFUNDED
+  REFUNDED
+}
+
+enum PayoutStatus {
+  PENDING
+  SCHEDULED
+  PAID
+  FAILED
+  CANCELLED
+}
+
+enum ReviewStatus {
+  PUBLISHED
+  HIDDEN
+  FLAGGED
+}
+
+enum DestinationKind {
+  COUNTRY
+  STATE
+  CITY
+  REGION
+  TOWN
+}
+
+enum TravelEstimateSource {
+  MANUAL_ESTIMATE // hand-entered approximation
+  HEURISTIC // straight-line distance × road factor
+  ROUTING_API // real routing provider
+}
+
+enum ExperienceCategory {
+  WINE_TOUR
+  RESTAURANT
+  HIKING
+  KAYAKING
+  WHALE_WATCHING
+  FAMILY_ATTRACTION
+  ADVENTURE
+  LOOKOUT
+  OTHER
+}
+
+enum ExperienceStatus {
+  DRAFT
+  PUBLISHED
+  HIDDEN
+}
+
+enum ComplianceDocumentType {
+  SHORT_TERM_RENTAL_REGISTRATION // e.g. NSW STRA register
+  ABN
+  INSURANCE
+  AUTHORITY_TO_LIST // ownership / management authority
+  LOCAL_COMPLIANCE_ACKNOWLEDGEMENT
+  OTHER
+}
+
+/// "APPROVED" means reviewed by a Roavela admin — it is NOT a claim of legal verification.
+enum ComplianceStatus {
+  SUBMITTED
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+// ───────────────────────────── Identity ─────────────────────────────
+
+model User {
+  id              String     @id @default(cuid())
+  email           String     @unique // always stored lower-cased
+  emailVerifiedAt DateTime?
+  passwordHash    String?
+  name            String
+  phone           String?
+  avatarUrl       String?
+  role            Role       @default(CUSTOMER)
+  status          UserStatus @default(ACTIVE)
+  locale          String     @default("en-AU")
+  isDemo          Boolean    @default(false)
+  lastLoginAt     DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
+  hostProfile         HostProfile?
+  bookings            Booking[]
+  reviews             Review[]
+  favourites          Favourite[]
+  adminActions        AdminAction[]         @relation("AdminActionActor")
+  reviewedCompliance  ComplianceDocument[]  @relation("ComplianceReviewer")
+  feeSchedulesCreated PlatformFeeSchedule[]
+
+  @@index([role, status])
+}
+
+/// Server-side session. Only a SHA-256 hash of the cookie token is stored.
+model Session {
+  id        String   @id // sha256(token), hex
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  userAgent String?
+  ipAddress String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model HostProfile {
+  id               String               @id @default(cuid())
+  userId           String               @unique
+  displayName      String
+  bio              String?
+  phone            String?
+  businessName     String?
+  onboardingStatus HostOnboardingStatus @default(NOT_STARTED)
+
+  // Stripe Connect (populated once the payments phase is enabled).
+  stripeAccountId String? @unique
+  payoutsEnabled  Boolean @default(false)
+  chargesEnabled  Boolean @default(false)
+
+  isDemo    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  properties          Property[]
+  payouts             Payout[]
+  complianceDocuments ComplianceDocument[]
+}
+
+// ───────────────────────────── Places & travel ─────────────────────────────
+
+/// A place people travel from or to. Hierarchical and country-agnostic.
+model Destination {
+  id             String          @id @default(cuid())
+  slug           String          @unique
+  name           String
+  kind           DestinationKind
+  parentId       String?
+  countryCode    String          @db.Char(2) // ISO-3166-1 alpha-2
+  adminArea      String? // state / province, e.g. "NSW"
+  latitude       Float
+  longitude      Float
+  timezone       String // IANA, e.g. "Australia/Sydney"
+  isOrigin       Boolean         @default(false) // offered as a "starting from" location
+  isPublished    Boolean         @default(false)
+  tagline        String?
+  summary        String?
+  heroImageUrl   String?
+  /// Structured editorial content (things to do, best time to visit, FAQs …) validated by a Zod schema.
+  content        Json?
+  seoTitle       String?
+  seoDescription String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  parent        Destination?    @relation("DestinationHierarchy", fields: [parentId], references: [id])
+  children      Destination[]   @relation("DestinationHierarchy")
+  properties    Property[]
+  experiences   Experience[]
+  estimatesFrom DriveEstimate[] @relation("EstimateOrigin")
+  estimatesTo   DriveEstimate[] @relation("EstimateDestination")
+
+  @@index([parentId])
+  @@index([countryCode, adminArea])
+  @@index([isOrigin])
+}
+
+/// Origin → destination driving estimate. Replaceable by a routing API without schema changes.
+model DriveEstimate {
+  id              String               @id @default(cuid())
+  originId        String
+  destinationId   String
+  durationMinutes Int
+  distanceMeters  Int
+  source          TravelEstimateSource
+  provider        String? // e.g. "mapbox", "google" when source = ROUTING_API
+  computedAt      DateTime             @default(now())
+
+  origin      Destination @relation("EstimateOrigin", fields: [originId], references: [id], onDelete: Cascade)
+  destination Destination @relation("EstimateDestination", fields: [destinationId], references: [id], onDelete: Cascade)
+
+  @@unique([originId, destinationId])
+  @@index([originId, durationMinutes])
+}
+
+// ───────────────────────────── Properties ─────────────────────────────
+
+model Property {
+  id            String         @id @default(cuid())
+  slug          String         @unique
+  hostId        String
+  destinationId String
+  title         String
+  summary       String
+  description   String
+  type          PropertyType
+  status        PropertyStatus @default(DRAFT)
+
+  // Address (country-agnostic)
+  addressLine1 String
+  addressLine2 String?
+  locality     String
+  adminArea    String?
+  postcode     String?
+  countryCode  String  @db.Char(2)
+  latitude     Float
+  longitude    Float
+  timezone     String
+
+  bedrooms  Int
+  beds      Int
+  bathrooms Float
+  maxGuests Int
+
+  // Pricing (minor units)
+  currency          String @default("AUD") @db.Char(3)
+  nightlyPriceCents Int
+  weekendPriceCents Int? // applies to Friday & Saturday nights
+  cleaningFeeCents  Int    @default(0)
+  minNights         Int    @default(1)
+  maxNights         Int?
+
+  checkInTime        String             @default("15:00")
+  checkOutTime       String             @default("10:00")
+  houseRules         String?
+  cancellationPolicy CancellationPolicy @default(MODERATE)
+  instantBook        Boolean            @default(false)
+
+  // Denormalised review aggregates (recomputed when reviews change)
+  ratingAverage Float?
+  reviewCount   Int    @default(0)
+
+  isDemo          Boolean   @default(false)
+  submittedAt     DateTime?
+  reviewedAt      DateTime?
+  publishedAt     DateTime?
+  rejectionReason String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  host         HostProfile          @relation(fields: [hostId], references: [id], onDelete: Restrict)
+  destination  Destination          @relation(fields: [destinationId], references: [id], onDelete: Restrict)
+  images       PropertyImage[]
+  amenities    PropertyAmenity[]
+  availability Availability[]
+  blockedDates BlockedDate[]
+  bookings     Booking[]
+  reviews      Review[]
+  favourites   Favourite[]
+  compliance   ComplianceDocument[]
+
+  @@index([status, destinationId])
+  @@index([status, nightlyPriceCents])
+  @@index([status, maxGuests])
+  @@index([hostId])
+  @@index([latitude, longitude])
+}
+
+model PropertyImage {
+  id         String   @id @default(cuid())
+  propertyId String
+  url        String
+  storageKey String? // provider-specific key (e.g. Cloudinary public_id)
+  alt        String
+  width      Int?
+  height     Int?
+  position   Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId, position])
+}
+
+model Amenity {
+  id           String          @id @default(cuid())
+  key          String          @unique // stable identifier used in URLs/filters, e.g. "pet_friendly"
+  label        String
+  category     AmenityCategory
+  icon         String?
+  isFilterable Boolean         @default(true)
+  sortOrder    Int             @default(0)
+
+  properties PropertyAmenity[]
+}
+
+model PropertyAmenity {
+  propertyId String
+  amenityId  String
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  amenity  Amenity  @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@id([propertyId, amenityId])
+  @@index([amenityId])
+}
+
+/// Per-night overrides (price / minimum stay / closed). Absence of a row means defaults apply.
+model Availability {
+  id          String   @id @default(cuid())
+  propertyId  String
+  date        DateTime @db.Date
+  isAvailable Boolean  @default(true)
+  priceCents  Int?
+  minNights   Int?
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([propertyId, date])
+}
+
+/// Host-blocked date range. endDate is exclusive.
+model BlockedDate {
+  id         String            @id @default(cuid())
+  propertyId String
+  startDate  DateTime          @db.Date
+  endDate    DateTime          @db.Date
+  reason     String?
+  source     BlockedDateSource @default(HOST)
+  externalId String? // e.g. iCal UID for future calendar sync
+  createdAt  DateTime          @default(now())
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId, startDate, endDate])
+}
+
+// ───────────────────────────── Bookings & money ─────────────────────────────
+
+model Booking {
+  id         String        @id @default(cuid())
+  reference  String        @unique // human-friendly, e.g. "RV-7K3M9Q"
+  propertyId String
+  guestId    String
+  status     BookingStatus @default(PENDING)
+  checkIn    DateTime      @db.Date
+  checkOut   DateTime      @db.Date // exclusive
+  nights     Int
+  adults     Int
+  children   Int           @default(0)
+
+  // Financial snapshot at the time of booking (minor units). Never recomputed from current config.
+  currency             String  @db.Char(3)
+  accommodationCents   Int
+  cleaningFeeCents     Int
+  guestServiceFeeCents Int
+  totalCents           Int // what the guest pays
+  hostCommissionCents  Int
+  hostPayoutCents      Int // gross, before any payment-processing costs
+  platformRevenueCents Int // gross platform revenue (guest fee + host commission) — NOT profit
+  guestServiceFeeBps   Int
+  hostCommissionBps    Int
+  feeScheduleId        String?
+
+  specialRequests    String?
+  confirmedAt        DateTime?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  completedAt        DateTime?
+  isDemo             Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  property    Property             @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  guest       User                 @relation(fields: [guestId], references: [id], onDelete: Restrict)
+  feeSchedule PlatformFeeSchedule? @relation(fields: [feeScheduleId], references: [id])
+  payments    Payment[]
+  payouts     Payout[]
+  review      Review?
+
+  @@index([propertyId, checkIn, checkOut])
+  @@index([propertyId, status])
+  @@index([guestId, createdAt])
+  @@index([status, checkIn])
+}
+
+model Payment {
+  id                 String        @id @default(cuid())
+  bookingId          String
+  provider           String // "stripe" | "mock"
+  providerPaymentId  String? // e.g. Stripe PaymentIntent id
+  status             PaymentStatus @default(REQUIRES_PAYMENT)
+  amountCents        Int
+  currency           String        @db.Char(3)
+  refundedCents      Int           @default(0)
+  /// Payment-processing cost, tracked separately from platform revenue.
+  processingFeeCents Int?
+  failureCode        String?
+  metadata           Json?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, providerPaymentId])
+  @@index([bookingId])
+  @@index([status])
+}
+
+model Payout {
+  id                 String       @id @default(cuid())
+  hostId             String
+  bookingId          String?
+  provider           String // "stripe" | "mock"
+  providerTransferId String?
+  status             PayoutStatus @default(PENDING)
+  amountCents        Int
+  currency           String       @db.Char(3)
+  scheduledFor       DateTime?
+  paidAt             DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  host    HostProfile @relation(fields: [hostId], references: [id], onDelete: Restrict)
+  booking Booking?    @relation(fields: [bookingId], references: [id])
+
+  @@unique([provider, providerTransferId])
+  @@index([hostId, status])
+  @@index([bookingId])
+}
+
+/// Versioned marketplace fee configuration. The active schedule is the latest one whose
+/// effectiveFrom <= now for the given country (null = global default).
+model PlatformFeeSchedule {
+  id                 String   @id @default(cuid())
+  name               String
+  countryCode        String?  @db.Char(2)
+  guestServiceFeeBps Int
+  hostCommissionBps  Int
+  effectiveFrom      DateTime
+  createdById        String?
+  createdAt          DateTime @default(now())
+
+  createdBy User?     @relation(fields: [createdById], references: [id])
+  bookings  Booking[]
+
+  @@index([countryCode, effectiveFrom])
+}
+
+// ───────────────────────────── Reviews & favourites ─────────────────────────────
+
+/// One review per booking; only COMPLETED bookings may be reviewed (enforced in the service layer).
+model Review {
+  id                  String       @id @default(cuid())
+  bookingId           String       @unique
+  propertyId          String
+  authorId            String
+  overallRating       Int // 1–5
+  cleanlinessRating   Int
+  locationRating      Int
+  valueRating         Int
+  communicationRating Int
+  body                String
+  hostResponse        String?
+  status              ReviewStatus @default(PUBLISHED)
+  isDemo              Boolean      @default(false)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  booking  Booking  @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  author   User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([propertyId, status, createdAt])
+  @@index([authorId])
+}
+
+model Favourite {
+  userId     String
+  propertyId String
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@id([userId, propertyId])
+  @@index([propertyId])
+}
+
+// ───────────────────────────── Experiences ─────────────────────────────
+
+model Experience {
+  id               String             @id @default(cuid())
+  slug             String             @unique
+  destinationId    String
+  title            String
+  category         ExperienceCategory
+  summary          String
+  description      String?
+  latitude         Float?
+  longitude        Float?
+  priceFromCents   Int?
+  currency         String?            @db.Char(3)
+  durationMinutes  Int?
+  websiteUrl       String?
+  /// Future affiliate / booking integrations
+  externalProvider String?
+  externalId       String?
+  status           ExperienceStatus   @default(DRAFT)
+  isDemo           Boolean            @default(false)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  destination Destination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+
+  @@index([destinationId, status, category])
+}
+
+// ───────────────────────────── Compliance & admin ─────────────────────────────
+
+/// Host-supplied compliance information. Requirements vary by jurisdiction, so the
+/// type-specific payload lives in `data` (validated per type/jurisdiction in code).
+model ComplianceDocument {
+  id              String                 @id @default(cuid())
+  hostId          String
+  propertyId      String?
+  jurisdiction    String // e.g. "AU-NSW"
+  type            ComplianceDocumentType
+  status          ComplianceStatus       @default(SUBMITTED)
+  referenceNumber String? // e.g. STRA registration number, ABN
+  data            Json?
+  fileUrl         String?
+  fileKey         String?
+  expiresAt       DateTime?
+  submittedAt     DateTime               @default(now())
+  reviewedAt      DateTime?
+  reviewedById    String?
+  reviewNote      String?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  host       HostProfile @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  property   Property?   @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  reviewedBy User?       @relation("ComplianceReviewer", fields: [reviewedById], references: [id])
+
+  @@index([hostId, type])
+  @@index([propertyId])
+  @@index([status, submittedAt])
+}
+
+/// Append-only audit log of administrative actions.
+model AdminAction {
+  id         String   @id @default(cuid())
+  adminId    String
+  action     String // e.g. "property.approve", "user.suspend"
+  targetType String // e.g. "Property", "User"
+  targetId   String
+  reason     String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  admin User @relation("AdminActionActor", fields: [adminId], references: [id], onDelete: Restrict)
+
+  @@index([targetType, targetId])
+  @@index([adminId, createdAt])
+}
