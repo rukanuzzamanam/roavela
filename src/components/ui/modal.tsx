@@ -12,13 +12,15 @@ interface ModalProps {
   footer?: ReactNode;
   /** "sheet" slides up from the bottom on small screens — used for filters on mobile. */
   variant?: "dialog" | "sheet";
+  /** "full" is a near-fullscreen dialog (e.g. photo gallery). */
+  size?: "md" | "full";
 }
 
 /**
  * Accessible modal built on the native <dialog> element: focus is trapped, Escape closes it, and
  * focus returns to the triggering element on close.
  */
-export function Modal({ open, onClose, title, children, footer, variant = "dialog" }: ModalProps) {
+export function Modal({ open, onClose, title, children, footer, variant = "dialog", size = "md" }: ModalProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
 
@@ -39,7 +41,8 @@ export function Modal({ open, onClose, title, children, footer, variant = "dialo
         if (e.target === ref.current) onClose();
       }}
       className={cn(
-        "m-auto max-h-[90dvh] w-full max-w-lg overflow-hidden rounded-3xl bg-white p-0 text-ink shadow-float backdrop:bg-ink/40 backdrop:backdrop-blur-sm",
+        "m-auto w-full overflow-hidden rounded-3xl bg-white p-0 text-ink shadow-float backdrop:bg-ink/40 backdrop:backdrop-blur-sm",
+        size === "md" ? "max-h-[90dvh] max-w-lg" : "max-h-[96dvh] max-w-5xl max-sm:h-dvh max-sm:max-h-dvh max-sm:rounded-none",
         variant === "sheet" &&
           "max-sm:mt-auto max-sm:mb-0 max-sm:max-h-[92dvh] max-sm:max-w-none max-sm:rounded-b-none",
       )}

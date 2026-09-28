@@ -64,7 +64,11 @@ const paths: Record<string, React.ReactNode> = {
   user: <><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 3.6-6.5 8-6.500s8 2.5 8 6.5" /></>,
   home: <path d="M3 11.5 12 4l9 7.500M5.5 9.500V20h13V9.5" />,
   shield: <path d="M12 3 4.5 6v6c0 4.5 3.2 7.8 7.5 9 4.3-1.2 7.5-4.5 7.5-9V6z" />,
-  clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+  heater: <><rect x="4" y="6" width="16" height="12" rx="2" /><path d="M8 6v12M12 6v12M16 6v12M6 18v2M18 18v2" /></>,
+  desk: <><path d="M3 10h18M5 10v10M19 10v10M13 10v5h6" /><rect x="7" y="4" width="8" height="6" rx="1" /></>,
+  eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>,
+  images: <><rect x="3" y="5" width="14" height="12" rx="2" /><path d="M7 21h12a2 2 0 0 0 2-2V9M3 14l4-4 4 4 2-2 4 4" /></>,
+  clock:<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
 };
 
 export type IconName = keyof typeof paths;

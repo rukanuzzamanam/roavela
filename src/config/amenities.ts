@@ -19,6 +19,9 @@ export const AMENITIES: readonly AmenityDefinition[] = [
   { key: "parking", label: "Free parking", category: "ESSENTIALS", icon: "car" },
   { key: "air_conditioning", label: "Air conditioning", category: "ESSENTIALS", icon: "snow" },
   { key: "washer", label: "Washing machine", category: "ESSENTIALS", icon: "washer" },
+  { key: "dryer", label: "Dryer", category: "ESSENTIALS", icon: "washer" },
+  { key: "heating", label: "Heating", category: "ESSENTIALS", icon: "heater" },
+  { key: "workspace", label: "Dedicated workspace", category: "FEATURES", icon: "desk" },
   { key: "pool", label: "Pool", category: "FEATURES", icon: "pool", highlight: true },
   { key: "spa", label: "Spa", category: "FEATURES", icon: "spa", highlight: true },
   { key: "fireplace", label: "Fireplace", category: "FEATURES", icon: "flame", highlight: true },
@@ -32,7 +35,22 @@ export const AMENITIES: readonly AmenityDefinition[] = [
   { key: "mountain", label: "Mountain setting", category: "SETTING", icon: "mountain", highlight: true },
   { key: "vineyard", label: "Vineyard setting", category: "SETTING", icon: "grape", highlight: true },
   { key: "farm_stay", label: "Farm stay", category: "SETTING", icon: "tractor", highlight: true },
+  { key: "beach_access", label: "Beach access", category: "SETTING", icon: "wave", highlight: true },
+  { key: "mountain_view", label: "Mountain view", category: "SETTING", icon: "eye" },
+  { key: "vineyard_view", label: "Vineyard view", category: "SETTING", icon: "eye" },
 ] as const;
+
+export const AMENITY_CATEGORY_LABELS: Record<AmenityCategory, string> = {
+  SETTING: "Setting & views",
+  FEATURES: "Features",
+  ESSENTIALS: "Essentials",
+  FAMILY: "Family & pets",
+  OUTDOOR: "Outdoors",
+  ACCESSIBILITY: "Accessibility",
+};
+
+/** Display order for grouped amenity lists. */
+export const AMENITY_CATEGORY_ORDER: AmenityCategory[] = ["SETTING", "FEATURES", "ESSENTIALS", "FAMILY", "OUTDOOR", "ACCESSIBILITY"];
 
 export const AMENITY_KEYS = AMENITIES.map((a) => a.key);
 export const AMENITY_BY_KEY = new Map(AMENITIES.map((a) => [a.key, a]));

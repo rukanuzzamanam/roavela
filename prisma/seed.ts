@@ -13,7 +13,7 @@ import { PrismaClient } from "../src/generated/prisma/client";
 import { addDays, nightsBetween, parseIsoDate } from "../src/lib/dates";
 import { quoteStay, type FeeRates } from "../src/lib/pricing";
 import { hashPassword } from "../src/server/auth/password";
-import { DESTINATIONS, DRIVE_ESTIMATES, EXPERIENCES, GUESTS, HOSTS, PROPERTIES, REVIEW_TEXTS } from "./seed-data";
+import { DESTINATIONS, DRIVE_ESTIMATES, EXPERIENCE_COORDS, EXPERIENCES, EXTRA_AMENITIES, GUESTS, HOSTS, PROPERTIES, REVIEW_TEXTS } from "./seed-data";
 
 if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEMO_SEED !== "true") {
   console.error("Refusing to seed demo data in production. Set ALLOW_DEMO_SEED=true to override.");
@@ -181,7 +181,9 @@ async function main() {
             position: i,
           })),
         },
-        amenities: { create: p.amenities.map((key) => ({ amenityId: amenityIds.get(key)! })) },
+        amenities: {
+          create: [...new Set([...p.amenities, ...(EXTRA_AMENITIES[p.slug] ?? [])])].map((key) => ({ amenityId: amenityIds.get(key)! })),
+        },
       },
     });
     propertyIds.set(p.slug, property.id);
@@ -304,6 +306,8 @@ async function main() {
         category: e.category,
         summary: e.summary,
         durationMinutes: e.durationMinutes,
+        latitude: EXPERIENCE_COORDS[e.slug]?.latitude,
+        longitude: EXPERIENCE_COORDS[e.slug]?.longitude,
         status: "PUBLISHED",
         isDemo: true,
       },
