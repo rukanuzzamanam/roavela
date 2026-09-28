@@ -19,6 +19,7 @@ export function SortSelect({ value }: { value: string }) {
         value={value}
         onChange={(e) => {
           const next = new URLSearchParams(searchParams);
+          next.delete("page"); // a new ordering starts from the first page
           if (e.target.value === "recommended") next.delete("sort");
           else next.set("sort", e.target.value);
           router.push(`${pathname}?${next.toString()}`, { scroll: false });

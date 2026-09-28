@@ -1,11 +1,10 @@
 import type { Prisma } from "@/generated/prisma/client";
 import type { SortOption } from "@/config/search";
 import type { SearchParams } from "@/lib/validation/search";
-import type { PropertyCardData } from "@/types/marketplace";
 
 /**
- * Pure query-building and ranking for property search. Kept free of I/O so the rules
- * (what is searchable, how availability is checked) are unit-testable.
+ * Pure query-building, ranking and pagination for property search. Kept free of I/O so the rules
+ * (what is searchable, how availability is checked, how results are ordered) are unit-testable.
  */
 
 /** Bookings in these states hold the dates. Must match the DB exclusion constraint. */
@@ -16,12 +15,38 @@ export interface SearchContext {
   includeDemo: boolean;
 }
 
-export function buildPropertyWhere(params: SearchParams, ctx: SearchContext): Prisma.PropertyWhereInput {
-  const and: Prisma.PropertyWhereInput[] = [];
+export interface StayRange {
+  checkIn: Date;
+  checkOut: Date;
+  nights: number;
+}
 
-  // Only admin-approved, live listings are ever publicly searchable.
-  and.push({ status: "PUBLISHED" });
-  if (!ctx.includeDemo) and.push({ isDemo: false });
+/**
+ * Conditions a property must meet to be bookable for a date range. Shared by search and the
+ * property page so both apply exactly the same availability rules.
+ */
+export function stayAvailabilityConditions({ checkIn, checkOut, nights }: StayRange): Prisma.PropertyWhereInput[] {
+  return [
+    { minNights: { lte: nights } },
+    { OR: [{ maxNights: null }, { maxNights: { gte: nights } }] },
+    // Half-open overlap: existing.checkIn < requested.checkOut AND existing.checkOut > requested.checkIn
+    {
+      bookings: {
+        none: { status: { in: [...ACTIVE_BOOKING_STATUSES] }, checkIn: { lt: checkOut }, checkOut: { gt: checkIn } },
+      },
+    },
+    { blockedDates: { none: { startDate: { lt: checkOut }, endDate: { gt: checkIn } } } },
+    { availability: { none: { date: { gte: checkIn, lt: checkOut }, isAvailable: false } } },
+  ];
+}
+
+/** Only admin-approved, live listings are ever publicly visible. */
+export function publicVisibilityConditions(includeDemo: boolean): Prisma.PropertyWhereInput[] {
+  return includeDemo ? [{ status: "PUBLISHED" }] : [{ status: "PUBLISHED" }, { isDemo: false }];
+}
+
+export function buildPropertyWhere(params: SearchParams, ctx: SearchContext): Prisma.PropertyWhereInput {
+  const and: Prisma.PropertyWhereInput[] = [...publicVisibilityConditions(ctx.includeDemo)];
 
   and.push({ maxGuests: { gte: params.guests } });
   if (params.bedrooms !== undefined) and.push({ bedrooms: { gte: params.bedrooms } });
@@ -38,9 +63,9 @@ export function buildPropertyWhere(params: SearchParams, ctx: SearchContext): Pr
     and.push({ amenities: { some: { amenity: { key: { in: params.anyAmenities } } } } });
   }
 
-  if (params.to) {
+  if (params.destination) {
     // Match the destination itself or any place nested beneath it.
-    and.push({ destination: { OR: [{ slug: params.to }, { parent: { slug: params.to } }] } });
+    and.push({ destination: { OR: [{ slug: params.destination }, { parent: { slug: params.destination } }] } });
   }
 
   if (params.drive !== undefined && ctx.originId) {
@@ -50,46 +75,62 @@ export function buildPropertyWhere(params: SearchParams, ctx: SearchContext): Pr
     });
   }
 
-  if (params.stay) {
-    const { checkIn, checkOut, nights } = params.stay;
-    and.push({ minNights: { lte: nights } });
-    and.push({ OR: [{ maxNights: null }, { maxNights: { gte: nights } }] });
-    // Half-open overlap: existing.checkIn < requested.checkOut AND existing.checkOut > requested.checkIn
-    and.push({
-      bookings: {
-        none: { status: { in: [...ACTIVE_BOOKING_STATUSES] }, checkIn: { lt: checkOut }, checkOut: { gt: checkIn } },
-      },
-    });
-    and.push({ blockedDates: { none: { startDate: { lt: checkOut }, endDate: { gt: checkIn } } } });
-    and.push({ availability: { none: { date: { gte: checkIn, lt: checkOut }, isAvailable: false } } });
-  }
+  if (params.stay) and.push(...stayAvailabilityConditions(params.stay));
 
   return { AND: and };
 }
 
-export function sortResults(results: PropertyCardData[], sort: SortOption): PropertyCardData[] {
-  const price = (p: PropertyCardData) => p.stay?.totalCents ?? p.nightlyPriceCents;
-  const drive = (p: PropertyCardData) => p.drive?.durationMinutes ?? Number.POSITIVE_INFINITY;
+/** The fields ranking needs. Satisfied by both lightweight candidates and full card DTOs. */
+export interface SortKeys {
+  id: string;
+  nightlyPriceCents: number;
+  stay?: { totalCents: number };
+  drive: { durationMinutes: number } | null;
+  ratingAverage: number | null;
+  reviewCount: number;
+}
+
+export function sortResults<T extends SortKeys>(results: T[], sort: SortOption): T[] {
+  const price = (p: T) => p.stay?.totalCents ?? p.nightlyPriceCents;
+  const drive = (p: T) => p.drive?.durationMinutes ?? Number.POSITIVE_INFINITY;
   // Bayesian-style rating so a single 5★ review doesn't outrank 40 reviews at 4.9.
-  const score = (p: PropertyCardData) => {
+  const score = (p: T) => {
     const prior = 4.5;
     const weight = 5;
     return ((p.ratingAverage ?? prior) * p.reviewCount + prior * weight) / (p.reviewCount + weight);
   };
+  // Stable tie-break on id keeps page boundaries deterministic across requests.
+  const byId = (a: T, b: T) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
   const sorted = [...results];
   switch (sort) {
     case "price_asc":
-      return sorted.sort((a, b) => price(a) - price(b));
+      return sorted.sort((a, b) => price(a) - price(b) || byId(a, b));
     case "price_desc":
-      return sorted.sort((a, b) => price(b) - price(a));
+      return sorted.sort((a, b) => price(b) - price(a) || byId(a, b));
     case "drive_asc":
-      return sorted.sort((a, b) => drive(a) - drive(b));
+      return sorted.sort((a, b) => drive(a) - drive(b) || byId(a, b));
     case "rating":
-      return sorted.sort((a, b) => score(b) - score(a));
+      return sorted.sort((a, b) => score(b) - score(a) || byId(a, b));
     case "recommended":
     default:
       // Balance quality against travel time: each hour of driving costs ~0.1 of a star.
-      return sorted.sort((a, b) => score(b) - drive(b) / 600 - (score(a) - drive(a) / 600));
+      return sorted.sort((a, b) => score(b) - drive(b) / 600 - (score(a) - drive(a) / 600) || byId(a, b));
   }
+}
+
+export interface PageInfo {
+  page: number;
+  pageSize: number;
+  totalResults: number;
+  totalPages: number;
+}
+
+/** Clamp the requested page into range and slice. Page numbers are 1-based. */
+export function paginate<T>(items: T[], requestedPage: number, pageSize: number): { items: T[]; info: PageInfo } {
+  const totalResults = items.length;
+  const totalPages = Math.max(1, Math.ceil(totalResults / pageSize));
+  const page = Math.min(Math.max(1, Math.floor(requestedPage)), totalPages);
+  const start = (page - 1) * pageSize;
+  return { items: items.slice(start, start + pageSize), info: { page, pageSize, totalResults, totalPages } };
 }

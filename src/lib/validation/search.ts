@@ -1,13 +1,17 @@
 import { z } from "zod";
 import { AMENITY_KEYS } from "@/config/amenities";
 import { COLLECTION_BY_SLUG } from "@/config/collections";
-import { DEFAULT_ORIGIN_SLUG, MAX_GUESTS, SORT_OPTIONS, type SortOption } from "@/config/search";
+import { DEFAULT_ORIGIN_SLUG, MAX_GUESTS, MAX_SEARCH_PAGE, SORT_OPTIONS, type SortOption } from "@/config/search";
 import { PropertyType } from "@/generated/prisma/enums";
 import { isIsoDate, nightsBetween, parseIsoDate } from "@/lib/dates";
 
 /**
  * Search parameters arrive from the URL, so every field degrades gracefully: invalid values are
  * dropped (`.catch`) rather than failing the whole page.
+ *
+ * Canonical URL keys: from, destination, drive, checkIn, checkOut, adults, children, minPrice,
+ * maxPrice, bedrooms, bathrooms, type, amenities, collection, sort, view, page.
+ * Accepted aliases: `to` (→ destination), `guests` (→ adults, when adults is absent).
  */
 
 type RawParams = Record<string, string | string[] | undefined>;
@@ -15,13 +19,14 @@ type RawParams = Record<string, string | string[] | undefined>;
 const slug = z.string().trim().toLowerCase().regex(/^[a-z0-9-]{1,80}$/);
 const intInRange = (min: number, max: number) => z.coerce.number().int().min(min).max(max);
 const toArray = (v: unknown) => (v === undefined ? [] : Array.isArray(v) ? v : String(v).split(","));
+const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 const propertyTypes = Object.values(PropertyType) as [PropertyType, ...PropertyType[]];
 const sortValues = SORT_OPTIONS.map((s) => s.value) as [SortOption, ...SortOption[]];
 
 const rawSchema = z.object({
   from: slug.catch(DEFAULT_ORIGIN_SLUG).default(DEFAULT_ORIGIN_SLUG),
-  to: slug.optional().catch(undefined),
+  destination: slug.optional().catch(undefined),
   drive: intInRange(1, 12).optional().catch(undefined),
   checkIn: z.string().refine(isIsoDate).optional().catch(undefined),
   checkOut: z.string().refine(isIsoDate).optional().catch(undefined),
@@ -40,6 +45,7 @@ const rawSchema = z.object({
   collection: z.string().optional().transform((v) => (v && COLLECTION_BY_SLUG.has(v) ? v : undefined)).catch(undefined),
   sort: z.enum(sortValues).catch("recommended").default("recommended"),
   view: z.enum(["list", "map"]).catch("list").default("list"),
+  page: intInRange(1, MAX_SEARCH_PAGE).catch(1).default(1),
 });
 
 export type SearchParams = z.infer<typeof rawSchema> & {
@@ -54,7 +60,13 @@ export type SearchParams = z.infer<typeof rawSchema> & {
 export const MAX_STAY_NIGHTS = 60;
 
 export function parseSearchParams(raw: RawParams): SearchParams {
-  const parsed = rawSchema.parse(raw);
+  const normalised: RawParams = {
+    ...raw,
+    destination: raw.destination ?? raw.to,
+    adults: raw.adults ?? first(raw.guests),
+  };
+  const parsed = rawSchema.parse(normalised);
+  if (parsed.adults + parsed.children > MAX_GUESTS) parsed.children = Math.max(0, MAX_GUESTS - parsed.adults);
   const result: SearchParams = { ...parsed, guests: parsed.adults + parsed.children, anyAmenities: [] };
 
   if (parsed.checkIn && parsed.checkOut) {
@@ -88,14 +100,26 @@ export function parseSearchParams(raw: RawParams): SearchParams {
   return result;
 }
 
-/** Serialise search params back into a query string (used for links such as the list/map toggle). */
+/** Number of user-chosen refinements (excludes where/when/who). */
+export function countActiveFilters(p: SearchParams): number {
+  return (
+    p.type.length +
+    p.amenities.length +
+    [p.minPrice, p.maxPrice, p.bedrooms, p.bathrooms].filter((v) => v !== undefined).length
+  );
+}
+
+/**
+ * Serialise search params back into a canonical query string. `page` is omitted unless > 1, so
+ * any link built from changed filters naturally resets to the first page.
+ */
 export function toSearchQuery(params: Partial<SearchParams>, overrides: Record<string, string | undefined> = {}): string {
   const q = new URLSearchParams();
   const set = (k: string, v: string | number | undefined) => {
     if (v !== undefined && v !== "") q.set(k, String(v));
   };
   set("from", params.from);
-  set("to", params.to);
+  set("destination", params.destination);
   set("drive", params.drive);
   set("checkIn", params.checkIn);
   set("checkOut", params.checkOut);
@@ -110,6 +134,7 @@ export function toSearchQuery(params: Partial<SearchParams>, overrides: Record<s
   set("collection", params.collection);
   if (params.sort && params.sort !== "recommended") set("sort", params.sort);
   if (params.view && params.view !== "list") set("view", params.view);
+  if (params.page && params.page > 1) set("page", params.page);
   for (const [k, v] of Object.entries(overrides)) {
     if (v === undefined) q.delete(k);
     else q.set(k, v);

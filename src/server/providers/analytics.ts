@@ -8,8 +8,14 @@ import { env } from "@/server/env";
  */
 export type AnalyticsEvent =
   | { name: "search_performed"; properties: { origin: string; maxDriveHours?: number; destination?: string; guests: number; hasDates: boolean; resultCount: number; collection?: string } }
+  | { name: "search_filtered"; properties: { filterCount: number; amenities: string[]; types: string[]; hasPriceFilter: boolean; resultCount: number } }
   | { name: "property_viewed"; properties: { propertyId: string } }
-  | { name: "property_saved"; properties: { propertyId: string; saved: boolean } }
+  | { name: "property_saved"; properties: { propertyId: string } }
+  | { name: "property_unsaved"; properties: { propertyId: string } }
+  | { name: "booking_preview_opened"; properties: { propertyId: string; nights: number; guests: number } }
+  | { name: "account_profile_updated"; properties: { fields: string[] } }
+  | { name: "password_reset_requested"; properties: Record<string, never> }
+  | { name: "password_reset_completed"; properties: Record<string, never> }
   | { name: "checkout_started"; properties: { propertyId: string; nights: number } }
   | { name: "booking_completed"; properties: { bookingId: string } }
   | { name: "host_signup_started"; properties: Record<string, never> }

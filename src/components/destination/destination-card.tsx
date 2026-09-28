@@ -8,7 +8,7 @@ import type { DestinationSummary } from "@/types/marketplace";
 export function DestinationCard({ destination: d, originSlug }: { destination: DestinationSummary; originSlug: string }) {
   return (
     <Link
-      href={`/search?from=${originSlug}&to=${d.slug}`}
+      href={`/search?from=${originSlug}&destination=${d.slug}`}
       className="group relative block overflow-hidden rounded-[var(--radius-card)] shadow-card"
     >
       <PropertyImage

@@ -39,6 +39,6 @@ export async function toggleFavourite(input: { propertyId: string }): Promise<Fa
     await prisma.favourite.upsert({ where: key, create: { userId: user.id, propertyId }, update: {} });
   }
 
-  track({ name: "property_saved", properties: { propertyId, saved: !existing }, userId: user.id });
+  track({ name: existing ? "property_unsaved" : "property_saved", properties: { propertyId }, userId: user.id });
   return { ok: true, saved: !existing };
 }

@@ -13,12 +13,12 @@ import { toIsoDate, todayInTimeZone } from "@/lib/dates";
 import { parseSearchParams } from "@/lib/validation/search";
 import { getCurrentUser } from "@/server/auth/session";
 import { listDestinationsFrom } from "@/server/services/destinations";
-import { listOrigins, searchProperties } from "@/server/services/search";
+import { listOrigins, listSearchDestinations, searchProperties } from "@/server/services/search";
 
 export default async function HomePage() {
   // Always render per request: content depends on live inventory.
   await connection();
-  const origins = await listOrigins().catch(() => []);
+  const [origins, destinations] = await Promise.all([listOrigins().catch(() => []), listSearchDestinations().catch(() => [])]);
   const defaultOrigin = origins.find((o) => o.slug === DEFAULT_ORIGIN_SLUG) ?? origins[0];
   const originName = defaultOrigin?.name ?? "home";
   const today = toIsoDate(todayInTimeZone("Australia/Sydney"));
@@ -45,7 +45,7 @@ export default async function HomePage() {
 
       <div className="container-page relative z-10 -mt-32 lg:-mt-36">
         {origins.length > 0 ? (
-          <SearchBar origins={origins} today={today} defaults={{ from: defaultOrigin?.slug }} />
+          <SearchBar origins={origins} destinations={destinations} today={today} defaults={{ from: defaultOrigin?.slug }} />
         ) : (
           <ErrorState description="Search is temporarily unavailable. Please try again shortly." />
         )}
@@ -159,7 +159,7 @@ async function DestinationsRail({ originSlug }: { originSlug: string }) {
 async function loadCollection(collection: CollectionPreset, originSlug: string) {
   const user = await getCurrentUser();
   const params = parseSearchParams({ from: originSlug, collection: collection.slug });
-  const { results } = await searchProperties(params, { userId: user?.id, limit: 8 });
+  const { results } = await searchProperties(params, { userId: user?.id, pageSize: 4 });
   return results;
 }
 
@@ -169,7 +169,7 @@ async function CollectionRail({ collection, originSlug }: { collection: Collecti
   if (results.length === 0) return <p className="text-mist">No stays in this collection yet — check back soon.</p>;
   return (
     <ul className="scrollbar-none -mx-4 flex snap-x snap-mandatory gap-5 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-4">
-      {results.slice(0, 4).map((p) => (
+      {results.map((p) => (
         <li key={p.id} className="w-[78vw] max-w-80 shrink-0 snap-start sm:w-auto sm:max-w-none">
           <PropertyCard property={p} className="h-full" />
         </li>

@@ -18,18 +18,21 @@ export interface SearchBarDefaults {
   adults?: number;
   children?: number;
   maxPrice?: number;
-  to?: string;
+  destination?: string;
 }
 
 const BUDGETS = [150, 200, 250, 300, 400, 500, 750];
 
 export function SearchBar({
   origins,
+  destinations,
   defaults = {},
   today,
   variant = "hero",
 }: {
   origins: OriginOption[];
+  /** Published destinations for "Where to?". */
+  destinations: OriginOption[];
   defaults?: SearchBarDefaults;
   /** Today's date (ISO) in the marketplace timezone, computed on the server. */
   today: string;
@@ -52,12 +55,10 @@ export function SearchBar({
       role="search"
       aria-label="Find a stay"
       className={cn(
-        "grid gap-4 rounded-[1.75rem] bg-white p-4 sm:p-5",
-        hero ? "shadow-float sm:grid-cols-2 lg:grid-cols-[1.1fr_1fr_1.5fr_1.2fr_1fr_auto] lg:items-end" : "border border-ink/10 sm:grid-cols-2 lg:grid-cols-6 lg:items-end",
+        "grid gap-4 rounded-[1.75rem] bg-white p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-4 lg:items-end",
+        hero ? "shadow-float" : "border border-ink/10",
       )}
     >
-      {defaults.to && <input type="hidden" name="to" value={defaults.to} />}
-
       <Select label="Starting from" name="from" defaultValue={defaults.from ?? origins[0]?.slug}>
         {origins.map((o) => (
           <option key={o.slug} value={o.slug}>
@@ -66,7 +67,17 @@ export function SearchBar({
         ))}
       </Select>
 
-      <Select label="Maximum drive" name="drive" defaultValue={defaults.drive?.toString() ?? "3"}>
+      <Select label="Where to?" name="destination" defaultValue={defaults.destination ?? ""}>
+        <option value="">Anywhere within reach</option>
+        {destinations.map((d) => (
+          <option key={d.slug} value={d.slug}>
+            {d.name}
+          </option>
+        ))}
+      </Select>
+
+      {/* An empty value means "no limit"; the hero suggests a weekend-friendly default. */}
+      <Select label="Maximum drive" name="drive" defaultValue={defaults.drive?.toString() ?? (hero ? "3" : "")}>
         <option value="">Any distance</option>
         {DRIVE_TIME_OPTIONS.map((h) => (
           <option key={h} value={h}>
@@ -75,13 +86,13 @@ export function SearchBar({
         ))}
       </Select>
 
-      <fieldset className="grid grid-cols-2 gap-2 sm:col-span-2 lg:col-span-1">
+      <GuestSelector defaultAdults={defaults.adults} defaultChildren={defaults.children} />
+
+      <fieldset className="grid grid-cols-2 gap-2 sm:col-span-2">
         <legend className="sr-only">Dates</legend>
         <DatePicker label="Check-in" name="checkIn" min={today} value={checkIn} onChange={(e) => onCheckInChange(e.target.value)} />
         <DatePicker label="Check-out" name="checkOut" min={checkIn || today} value={checkOut} onChange={(e) => setCheckOut(e.target.value)} />
       </fieldset>
-
-      <GuestSelector defaultAdults={defaults.adults} defaultChildren={defaults.children} />
 
       <Select label="Budget per night" name="maxPrice" defaultValue={defaults.maxPrice?.toString() ?? ""}>
         <option value="">Any price (optional)</option>
@@ -92,7 +103,7 @@ export function SearchBar({
         ))}
       </Select>
 
-      <Button type="submit" variant="accent" size="lg" className={cn("w-full sm:col-span-2 lg:col-span-1", hero && "lg:mb-0")}>
+      <Button type="submit" variant="accent" size="lg" className="w-full sm:col-span-1">
         <Icon name="search" size={18} />
         {hero ? "Find my escape" : "Search"}
       </Button>

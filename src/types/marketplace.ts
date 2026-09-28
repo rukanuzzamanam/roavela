@@ -32,12 +32,25 @@ export interface PropertyCardData {
   bathrooms: number;
   highlights: { key: string; label: string }[];
   drive: DriveInfo | null;
+  /** Approximate (rounded) — never the exact stored position. */
   latitude: number;
   longitude: number;
   isDemo: boolean;
   isFavourite: boolean;
   /** Present when the search included valid dates. */
   stay?: { nights: number; totalCents: number };
+}
+
+/** A search result plotted on a map. Coordinates are approximate (rounded) for privacy. */
+export interface MapPoint {
+  id: string;
+  slug: string;
+  title: string;
+  latitude: number;
+  longitude: number;
+  nightlyPriceCents: number;
+  currency: string;
+  driveMinutes: number | null;
 }
 
 export interface OriginOption {
