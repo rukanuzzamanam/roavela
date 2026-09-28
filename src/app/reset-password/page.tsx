@@ -18,7 +18,7 @@ export default async function ResetPasswordPage({ searchParams }: { searchParams
   const state = await inspectResetToken(token);
 
   return (
-    <AuthShell title="Choose a new password" subtitle="Pick something you haven't used for Roavela before.">
+    <AuthShell title="Choose a new password" subtitle="Use at least 10 characters, and don't reuse a password from another site.">
       {state === "valid" ? <ResetPasswordForm token={token} /> : <ResetLinkProblem reason={state} />}
     </AuthShell>
   );
