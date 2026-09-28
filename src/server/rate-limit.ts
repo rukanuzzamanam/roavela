@@ -52,6 +52,10 @@ export const RATE_LIMITS = {
   signIn: { limit: 8, windowMs: 15 * 60_000 },
   signUp: { limit: 5, windowMs: 60 * 60_000 },
   favourite: { limit: 60, windowMs: 60_000 },
+  profile: { limit: 20, windowMs: 60 * 60_000 },
+  passwordResetRequestByIp: { limit: 5, windowMs: 15 * 60_000 },
+  passwordResetRequestByEmail: { limit: 3, windowMs: 60 * 60_000 },
+  passwordResetSubmit: { limit: 10, windowMs: 15 * 60_000 },
 } as const satisfies Record<string, RateLimitRule>;
 
 const globalForLimiter = globalThis as unknown as { rateLimiter?: RateLimiter };
