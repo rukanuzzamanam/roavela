@@ -27,6 +27,16 @@ describe("search params (Phase 2)", () => {
     expect(toSearchQuery(parseSearchParams({ page: "2" }))).toContain("page=2");
   });
 
+  it("treats empty form fields as absent (regression: ?maxPrice= became $0)", () => {
+    const p = parseSearchParams({ destination: "hunter-valley", drive: "", maxPrice: "", minPrice: "", bedrooms: "", checkIn: "", checkOut: "", adults: "2", children: "0", type: [""] });
+    expect(p.maxPrice).toBeUndefined();
+    expect(p.minPrice).toBeUndefined();
+    expect(p.bedrooms).toBeUndefined();
+    expect(p.drive).toBeUndefined();
+    expect(p.type).toEqual([]);
+    expect(p.destination).toBe("hunter-valley");
+  });
+
   it("caps total guests", () => {
     const p = parseSearchParams({ adults: "16", children: "5" });
     expect(p.guests).toBe(16);

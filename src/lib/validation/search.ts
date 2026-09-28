@@ -59,7 +59,19 @@ export type SearchParams = z.infer<typeof rawSchema> & {
 
 export const MAX_STAY_NIGHTS = 60;
 
-export function parseSearchParams(raw: RawParams): SearchParams {
+/** Treat empty form fields (`?maxPrice=`) as absent — otherwise coercion would turn "" into 0. */
+function dropEmpty(raw: RawParams): RawParams {
+  const out: RawParams = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const cleaned = Array.isArray(value) ? value.filter((v) => v.trim() !== "") : value;
+    if (cleaned === undefined || (typeof cleaned === "string" && cleaned.trim() === "") || (Array.isArray(cleaned) && cleaned.length === 0)) continue;
+    out[key] = cleaned;
+  }
+  return out;
+}
+
+export function parseSearchParams(input: RawParams): SearchParams {
+  const raw = dropEmpty(input);
   const normalised: RawParams = {
     ...raw,
     destination: raw.destination ?? raw.to,
