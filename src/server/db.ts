@@ -4,7 +4,14 @@ import { PrismaClient } from "@/generated/prisma/client";
 import { env } from "./env";
 
 function createClient() {
-  const adapter = new PrismaPg({ connectionString: env().DATABASE_URL });
+  const { DATABASE_URL, DATABASE_POOL_MAX, DATABASE_IDLE_TIMEOUT_MS } = env();
+  // Pool settings are optional; driver defaults apply when unset. Lightweight local servers such as
+  // `prisma dev` drop idle connections, so they need a very short idle timeout (see .env.example).
+  const adapter = new PrismaPg({
+    connectionString: DATABASE_URL,
+    ...(DATABASE_POOL_MAX !== undefined && { max: DATABASE_POOL_MAX }),
+    ...(DATABASE_IDLE_TIMEOUT_MS !== undefined && { idleTimeoutMillis: DATABASE_IDLE_TIMEOUT_MS }),
+  });
   return new PrismaClient({
     adapter,
     log: env().NODE_ENV === "development" ? ["warn", "error"] : ["error"],
