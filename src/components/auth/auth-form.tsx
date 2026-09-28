@@ -55,6 +55,13 @@ export function AuthForm({ mode, next }: { mode: "login" | "signup"; next?: stri
         hint={isSignup ? "At least 10 characters, with a number or symbol." : undefined}
         error={state.fieldErrors?.password}
       />
+      {!isSignup && (
+        <p className="-mt-2 text-right text-sm">
+          <Link href="/forgot-password" className="font-semibold text-eucalypt-700 underline-offset-4 hover:underline">
+            Forgot password?
+          </Link>
+        </p>
+      )}
 
       <Button type="submit" size="lg" className="w-full" disabled={pending}>
         {pending ? (isSignup ? "Creating account…" : "Logging in…") : isSignup ? "Create account" : "Log in"}

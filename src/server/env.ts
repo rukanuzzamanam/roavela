@@ -20,6 +20,7 @@ const schema = z.object({
   ANALYTICS_PROVIDER: z.enum(["console", "none"]).optional(),
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().default("Roavela <hello@example.com>"),
+  PASSWORD_RESET_TOKEN_TTL_MINUTES: z.coerce.number().int().min(5).max(24 * 60).default(30),
 });
 
 export type ServerEnv = z.infer<typeof schema>;
