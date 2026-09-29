@@ -20,6 +20,12 @@ const schema = z.object({
   ANALYTICS_PROVIDER: z.enum(["console", "none"]).optional(),
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().default("Roavela <hello@example.com>"),
+  STORAGE_PROVIDER: z.enum(["local"]).default("local"),
+  STORAGE_LOCAL_DIR: z.string().default(".data/uploads"),
+  STORAGE_LOCAL_ALLOW_PRODUCTION: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
   PASSWORD_RESET_TOKEN_TTL_MINUTES: z.coerce.number().int().min(5).max(24 * 60).default(30),
 });
 

@@ -23,3 +23,6 @@ next-env.d.ts
 *.pem
 npm-debug.log*
 .vercel
+
+# local development uploads (storage provider "local")
+/.data/

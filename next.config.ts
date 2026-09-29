@@ -20,7 +20,8 @@ const nextConfig: NextConfig = {
     ],
   },
   experimental: {
-    serverActions: { bodySizeLimit: "1mb" },
+    // Photo and document uploads go through Server Actions (one file per request, 10 MB max).
+    serverActions: { bodySizeLimit: "11mb" },
     // Enables forbidden() / unauthorized() for role-based 403 responses.
     authInterrupts: true,
   },
