@@ -22,9 +22,8 @@ export interface BookingCardProps {
 }
 
 /**
- * Booking *preview*. Shows an estimated price from server-side pricing; "Reserve" leads to a
- * preview page that states clearly that online booking isn't available yet. Nothing is booked,
- * held or charged.
+ * Price and availability for the selected stay (server-side pricing). "Reserve" leads to the trip
+ * review page; nothing is held or charged until the guest continues to payment there.
  */
 export function BookingCard(p: BookingCardProps) {
   const problem = p.quote && p.quote.status !== "ok" ? describeQuoteProblem(p.quote) : null;
@@ -65,7 +64,7 @@ export function BookingCard(p: BookingCardProps) {
       <p id="reserve-note" className="mt-2 text-center text-xs text-mist">
         {!p.selection.checkIn || !p.selection.checkOut
           ? "Choose dates to see your estimated total."
-          : "Online booking is coming soon — you won't be charged."}
+          : "You won't be charged yet. Payments run in test mode."}
         {p.isDemo && " This is a demo listing."}
       </p>
     </Card>

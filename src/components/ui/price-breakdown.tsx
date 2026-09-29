@@ -2,8 +2,11 @@ import { formatMoney } from "@/lib/money";
 import type { StayQuote } from "@/lib/pricing";
 import { pluralize } from "@/lib/utils";
 
+/** The lines a price breakdown needs: a live quote or a stored booking snapshot. */
+export type PriceLines = Pick<StayQuote, "nights" | "nightlyRates" | "accommodationCents" | "cleaningFeeCents" | "guestServiceFeeCents" | "guestTotalCents">;
+
 /** Guest-facing price breakdown. Shows only what the guest pays — host commission is never displayed here. */
-export function PriceBreakdown({ quote, currency, totalLabel = "Total" }: { quote: StayQuote; currency: string; totalLabel?: string }) {
+export function PriceBreakdown({ quote, currency, totalLabel = "Total" }: { quote: PriceLines; currency: string; totalLabel?: string }) {
   const rates = new Set(quote.nightlyRates.map((n) => n.cents));
   const rows = [
     {

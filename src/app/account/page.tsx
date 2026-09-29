@@ -86,19 +86,26 @@ export default async function AccountPage() {
       </section>
 
       <section aria-labelledby="trips-heading" className="mt-12">
-        <h2 id="trips-heading" className="mb-6 text-2xl">
-          Your trips
-        </h2>
+        <div className="mb-6 flex items-end justify-between gap-4">
+          <h2 id="trips-heading" className="text-2xl">
+            Your trips
+          </h2>
+          <ButtonLink href="/account/bookings" variant="ghost" size="sm">
+            View all
+          </ButtonLink>
+        </div>
         {trips.length === 0 ? (
-          <EmptyState icon="calendar" title="You haven't booked a stay yet" description="Online booking is coming soon. Your trips will appear here." />
+          <EmptyState icon="calendar" title="You haven't booked a stay yet" description="Your trips will appear here once you book." action={<ButtonLink href="/search">Find a stay</ButtonLink>} />
         ) : (
           <Card className="divide-y divide-ink/10">
             {trips.map((t) => (
-              <div key={t.id} className="flex flex-wrap items-center justify-between gap-3 p-5">
+              <Link
+                key={t.id}
+                href={t.status === "PENDING" ? `/checkout/${t.reference}` : `/account/bookings/${t.reference}`}
+                className="flex flex-wrap items-center justify-between gap-3 p-5 hover:bg-sand-50"
+              >
                 <div>
-                  <Link href={`/stays/${t.property.slug}`} className="font-semibold hover:underline">
-                    {t.property.title}
-                  </Link>
+                  <p className="font-semibold">{t.property.title}</p>
                   <p className="text-sm text-mist">
                     {formatStayDate(t.checkIn)} → {formatStayDate(t.checkOut)} · Ref {t.reference}
                   </p>
@@ -107,11 +114,9 @@ export default async function AccountPage() {
                   <Badge tone={BOOKING_STATUS_LABELS[t.status].tone}>{BOOKING_STATUS_LABELS[t.status].label}</Badge>
                   {t.isDemo && <Badge tone="demo">Demo data</Badge>}
                 </div>
-              </div>
+              </Link>
             ))}
-            <p className="p-5 text-sm text-mist">
-              Read-only history{trips.some((t) => t.isDemo) ? " (includes seeded demo trips)" : ""}. Managing and cancelling trips arrives with online booking. Showing up to {pluralize(5, "trip")}.
-            </p>
+            <p className="p-5 text-sm text-mist">Showing your {pluralize(trips.length, "most recent trip", "most recent trips")}.</p>
           </Card>
         )}
       </section>

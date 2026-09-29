@@ -20,6 +20,7 @@ export function StatusBadge({ status, percent }: { status: PropertyStatus; perce
 const NAV = [
   { href: "/host", label: "Dashboard", icon: "home" },
   { href: "/host/properties", label: "Properties", icon: "list" },
+  { href: "/host/bookings", label: "Bookings", icon: "calendar" },
   { href: "/host/profile", label: "Host profile", icon: "user" },
 ];
 

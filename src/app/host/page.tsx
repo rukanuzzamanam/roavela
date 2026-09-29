@@ -6,6 +6,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { Badge, Card, EmptyState } from "@/components/ui/feedback";
 import { Icon } from "@/components/ui/icons";
 import { formatStayDate } from "@/lib/dates";
+import { formatMoney } from "@/lib/money";
 import { pluralize } from "@/lib/utils";
 import { requireHost } from "@/server/auth/host-guard";
 import { getHostDashboard, listHostProperties } from "@/server/services/host-properties";
@@ -98,23 +99,26 @@ export default async function HostDashboardPage() {
             Upcoming bookings
           </h2>
           {dashboard.upcoming.length === 0 ? (
-            <EmptyState icon="calendar" title="No upcoming bookings" description="Online booking is coming soon. Confirmed stays will appear here." />
+            <EmptyState icon="calendar" title="No upcoming bookings" description="Confirmed stays will appear here as soon as guests book and pay." />
           ) : (
             <Card className="divide-y divide-ink/10">
               {dashboard.upcoming.map((b) => (
-                <div key={b.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
+                <Link key={b.id} href={`/host/bookings/${b.reference}`} className="flex flex-wrap items-center justify-between gap-2 p-4 hover:bg-sand-50">
                   <div>
                     <p className="font-semibold">{b.property.title}</p>
                     <p className="text-sm text-mist">
                       {formatStayDate(b.checkIn)} → {formatStayDate(b.checkOut)} · {pluralize(b.adults + b.children, "guest")}
                     </p>
                   </div>
-                  <div className="flex gap-2">
-                    <Badge tone={b.status === "CONFIRMED" ? "success" : "neutral"}>{b.status === "CONFIRMED" ? "Confirmed" : "Pending"}</Badge>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold tabular-nums">{formatMoney(b.hostPayoutCents, b.currency, { showCents: true })}</span>
                     {b.isDemo && <Badge tone="demo">Demo data</Badge>}
                   </div>
-                </div>
+                </Link>
               ))}
+              <Link href="/host/bookings" className="block p-4 text-sm font-semibold text-eucalypt-700 hover:underline">
+                All bookings
+              </Link>
             </Card>
           )}
         </section>
@@ -122,7 +126,11 @@ export default async function HostDashboardPage() {
           <h2 id="earnings" className="mb-4 text-2xl">
             Earnings
           </h2>
-          <EmptyState icon="shield" title="Earnings reporting is on its way" description="Payouts and earnings reports arrive with online payments. Use the pricing step to see an estimate per stay." />
+          <EmptyState
+            icon="shield"
+            title="Payouts aren't enabled yet"
+            description="Each booking shows your estimated proceeds (accommodation − commission + cleaning fee). Payments currently run in Stripe test mode, and host payouts will be enabled in a later phase."
+          />
         </section>
       </div>
     </HostShell>
