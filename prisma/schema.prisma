@@ -692,7 +692,8 @@ model ComplianceDocument {
   reviewedBy User?       @relation("ComplianceReviewer", fields: [reviewedById], references: [id])
 
   @@index([hostId, type])
-  @@index([propertyId])
+  /// One current record per requirement per listing (host-level records have propertyId = null).
+  @@unique([propertyId, type])
   @@index([status, submittedAt])
 }
 
