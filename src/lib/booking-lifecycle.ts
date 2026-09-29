@@ -23,6 +23,9 @@ export function bookingTransition(event: BookingEvent, from: BookingStatus): Boo
   return rule.from.includes(from) ? rule.to : null;
 }
 
+/** How long a PENDING booking holds the dates while the guest pays (server-enforced). */
+export const CHECKOUT_HOLD_MINUTES = 20;
+
 /** Statuses that hold the property's dates. MUST match the Booking_no_overlap constraint. */
 export const INVENTORY_HOLDING_STATUSES = ["PENDING", "CONFIRMED"] as const;
 
@@ -80,4 +83,52 @@ export function quoteCancellation(
         ? { eligibility: "partial", refundCents: partial, explanation: "Strict policy: 14 or more days before check-in, 50% of the accommodation and the cleaning fee are refunded. The service fee isn't." }
         : { eligibility: "none", refundCents: 0, explanation: "Strict policy: within 14 days of check-in, cancellations aren't refundable." };
   }
+}
+
+// ── Display helpers ───────────────────────────────────────────────────────────
+
+/** Price lines for a stored booking, read from its immutable snapshot (never re-priced). */
+export function bookingPriceLines(b: {
+  nights: number;
+  accommodationCents: number;
+  cleaningFeeCents: number;
+  guestServiceFeeCents: number;
+  totalCents: number;
+  pricingSnapshot: unknown;
+}) {
+  const snapshot = b.pricingSnapshot as { nightlyRates?: { date: string; cents: number }[] } | null;
+  const nightlyRates = Array.isArray(snapshot?.nightlyRates) && snapshot.nightlyRates.length > 0
+    ? snapshot.nightlyRates
+    : [{ date: "", cents: Math.round(b.accommodationCents / Math.max(1, b.nights)) }];
+  return {
+    nights: b.nights,
+    nightlyRates,
+    accommodationCents: b.accommodationCents,
+    cleaningFeeCents: b.cleaningFeeCents,
+    guestServiceFeeCents: b.guestServiceFeeCents,
+    guestTotalCents: b.totalCents,
+  };
+}
+
+export interface HouseRulesSnapshot {
+  checkInTime: string;
+  checkOutTime: string;
+  smokingAllowed: boolean;
+  petsAllowed: boolean;
+  eventsAllowed: boolean;
+  quietHoursStart: string | null;
+  quietHoursEnd: string | null;
+  houseRules: string | null;
+}
+
+export function houseRulesList(r: HouseRulesSnapshot | null): string[] {
+  if (!r) return [];
+  return [
+    `Check-in from ${r.checkInTime}, check-out by ${r.checkOutTime}`,
+    r.smokingAllowed ? "Smoking allowed" : "No smoking",
+    r.petsAllowed ? "Pets allowed" : "No pets",
+    r.eventsAllowed ? "Events allowed" : "No parties or events",
+    ...(r.quietHoursStart && r.quietHoursEnd ? [`Quiet hours ${r.quietHoursStart}–${r.quietHoursEnd}`] : []),
+    ...(r.houseRules ? [r.houseRules] : []),
+  ];
 }

@@ -63,6 +63,13 @@ export const RATE_LIMITS = {
   photoUpload: { limit: 120, windowMs: 60 * 60_000 },
   complianceUpload: { limit: 30, windowMs: 60 * 60_000 },
   listingSubmit: { limit: 20, windowMs: 60 * 60_000 },
+  // Booking & payments (Phase 4).
+  bookingQuote: { limit: 30, windowMs: 60 * 60_000 },
+  checkout: { limit: 60, windowMs: 60 * 60_000 },
+  paymentIntent: { limit: 30, windowMs: 60 * 60_000 },
+  bookingCancel: { limit: 10, windowMs: 60 * 60_000 },
+  // Per source IP. Stripe retries with backoff, so a generous cap only stops floods.
+  webhook: { limit: 600, windowMs: 60_000 },
 } as const satisfies Record<string, RateLimitRule>;
 
 const globalForLimiter = globalThis as unknown as { rateLimiter?: RateLimiter };

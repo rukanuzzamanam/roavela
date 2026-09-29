@@ -25,8 +25,14 @@ export type AnalyticsEvent =
   | { name: "property_previewed"; properties: { propertyId: string } }
   | { name: "property_submitted"; properties: { propertyId: string } }
   | { name: "property_paused"; properties: { propertyId: string } }
-  | { name: "checkout_started"; properties: { propertyId: string; nights: number } }
-  | { name: "booking_completed"; properties: { bookingId: string } }
+  | { name: "booking_quote_created"; properties: { propertyId: string; bookingId: string; nights: number; guests: number; totalCents: number; currency: string } }
+  | { name: "checkout_started"; properties: { propertyId: string; bookingId: string; nights: number } }
+  | { name: "payment_started"; properties: { bookingId: string; provider: string } }
+  | { name: "payment_succeeded"; properties: { bookingId: string; provider: string; amountCents: number; currency: string } }
+  | { name: "payment_failed"; properties: { bookingId: string; provider: string; failureCode?: string } }
+  | { name: "booking_confirmed"; properties: { bookingId: string; propertyId: string } }
+  | { name: "booking_cancelled"; properties: { bookingId: string; by: "guest"; refundCents: number } }
+  | { name: "refund_requested"; properties: { bookingId: string; amountCents: number; reason: "guest_cancellation" | "late_payment" } }
   | { name: "host_signup_started"; properties: Record<string, never> }
   | { name: "host_listing_submitted"; properties: { propertyId: string } };
 

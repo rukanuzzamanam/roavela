@@ -2,11 +2,11 @@ import "server-only";
 import { toIsoDate } from "@/lib/dates";
 import { quoteStay, type StayQuote } from "@/lib/pricing";
 import { prisma } from "@/server/db";
-import { getActiveFeeSchedule } from "./fees";
+import { getActiveFeeSchedule, type ActiveFeeSchedule } from "./fees";
 import { stayAvailabilityConditions, type StayRange } from "./search-query";
 
 export type StayQuoteResult =
-  | { status: "ok"; quote: StayQuote }
+  | { status: "ok"; quote: StayQuote; feeSchedule: ActiveFeeSchedule }
   | { status: "too_many_guests"; maxGuests: number }
   | { status: "min_nights"; minNights: number }
   | { status: "max_nights"; maxNights: number }
@@ -28,9 +28,9 @@ interface QuotableProperty {
  * and the booking preview. Prices always come from the database and the active fee schedule, never
  * from the client. Availability uses the same rules as search (stayAvailabilityConditions).
  *
- * This is an estimate for display only; nothing is held or booked.
+ * On its own this holds nothing; createBookingHold() turns an ok quote into a priced PENDING hold.
  */
-export async function getStayQuote(property: QuotableProperty, stay: StayRange, guests: number): Promise<StayQuoteResult> {
+export async function getStayQuote(property: QuotableProperty, stay: StayRange, guests: number, now = new Date()): Promise<StayQuoteResult> {
   // An unpriced listing (only possible for drafts) can never be quoted.
   const nightlyPriceCents = property.nightlyPriceCents;
   if (nightlyPriceCents === null) return { status: "unavailable" };
@@ -39,7 +39,7 @@ export async function getStayQuote(property: QuotableProperty, stay: StayRange, 
   if (property.maxNights !== null && stay.nights > property.maxNights) return { status: "max_nights", maxNights: property.maxNights };
 
   const [available, overrides, fees] = await Promise.all([
-    prisma.property.count({ where: { AND: [{ id: property.id }, ...stayAvailabilityConditions(stay)] } }),
+    prisma.property.count({ where: { AND: [{ id: property.id }, ...stayAvailabilityConditions(stay, now)] } }),
     prisma.availability.findMany({
       where: { propertyId: property.id, date: { gte: stay.checkIn, lt: stay.checkOut }, priceCents: { not: null } },
       select: { date: true, priceCents: true },
@@ -54,7 +54,7 @@ export async function getStayQuote(property: QuotableProperty, stay: StayRange, 
     { ...property, nightlyPriceCents, overrides: new Map(overrides.map((o) => [toIsoDate(o.date), o.priceCents as number])) },
     fees,
   );
-  return { status: "ok", quote };
+  return { status: "ok", quote, feeSchedule: fees };
 }
 
 export function describeQuoteProblem(result: Exclude<StayQuoteResult, { status: "ok" }>): string {
