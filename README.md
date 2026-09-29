@@ -4,7 +4,112 @@
 
 Roavela is an Australian travel marketplace built around one idea: discover stays and weekend escapes by **how far you want to drive**. It starts with Sydney as the primary origin (Blue Mountains, Hunter Valley, Kiama, Jervis Bay…), but nothing in the architecture is tied to Sydney, NSW or Australia.
 
-> **Status: Phase 2 (customer marketplace).** Travellers can search (with filters, sorting and pagination), open a full property page, preview a price, save stays, manage their profile and reset a forgotten password. **Online booking and payments are not available yet** — the Reserve button leads to a clearly labelled preview and nothing is booked or charged. Host portal, admin tools, `/explore`, the trip planner and destination guides come in later phases — see [Roadmap](#roadmap).
+> **Status: Phase 3 (host onboarding & property management).**
+>
+> - **Travellers** can search, view stays, preview prices, save stays and manage their account (Phase 2).
+> - **Property owners and managers** can become hosts, build listings section by section, upload photos, set pricing and availability, provide compliance information, preview, and submit for review (Phase 3).
+> - **Submitted listings are not public until an admin approves them.**
+> - **Not available yet:** online booking and payments, and the admin review UI. See [Roadmap](#roadmap).
+
+## Phase 3 at a glance — hosts
+
+| Route | What it does |
+|---|---|
+| `/host/start` | Public "List your property" page: benefits, how it works, no promises of bookings or income |
+| `/host/onboarding` | Step 1: host profile. Upgrades the **same account** from CUSTOMER to HOST; admins can't host |
+| `/host` | Dashboard: real counts only (properties, drafts, under review, live), tasks needing attention, upcoming bookings (real records only, demo ones labelled), and an earnings placeholder |
+| `/host/profile` | Public profile (display name, bio, photo) and private details (legal/business name, ABN, phone) |
+| `/host/properties` | All the host's listings as cards with status and % complete |
+| `/host/properties/new` | Step 2: property basics. Creates a private DRAFT |
+| `/host/properties/[id]` | Overview: status and help text, reviewer notes, submission checklist, lifecycle actions, private address |
+| `/host/properties/[id]/edit/[section]` | Sections: basics, location, description, amenities, photos, pricing (with an earnings estimate), availability (calendar), house rules & cancellation, compliance (with private document upload) |
+| `/host/properties/[id]/preview` | "PREVIEW — NOT LIVE". Uses the same layout as the public stay page |
+| `/host/compliance/[id]/file` | Private compliance-document download (owner or admin only) |
+| `/media/…` | Serves public uploaded images from the storage provider |
+
+### Listing lifecycle
+
+```
+DRAFT ─submit─▶ PENDING_REVIEW ─approve (admin)─▶ PUBLISHED ◀─resume─ PAUSED
+  ▲              │   │                             └─pause─────────────▲
+  └─withdraw─────┘   ├─request changes (admin)─▶ CHANGES_REQUESTED ─resubmit─▶ PENDING_REVIEW
+                     └─reject (admin)─▶ REJECTED
+PUBLISHED/PAUSED ─suspend (admin)─▶ SUSPENDED ─reinstate (admin)─▶ PAUSED
+DRAFT / CHANGES_REQUESTED / REJECTED / PAUSED ─archive (host)─▶ ARCHIVED
+```
+
+- The rules live in `src/lib/listing-lifecycle.ts`.
+- **Status is never accepted from the client.** Actions take a named intent (`submit`, `pause`, …), and the server works out the target state. Hosts have no intent that approves anything; their only path to `PUBLISHED` is resuming a listing an admin already approved.
+- "Incomplete" and "ready for review" are computed from the checklist, not stored. `PENDING_REVIEW` is shown to hosts as "Under review".
+- **Editing:**
+  - Editing is locked while a listing is under review; the host withdraws it to edit.
+  - Edits to `PUBLISHED`/`PAUSED` listings are allowed and audit-logged as `property.edited_after_review`.
+- **Submission** is validated server-side against `src/lib/listing-checklist.ts`:
+  - basics, location, description, at least one amenity
+  - at least 3 photos, each with a description
+  - a nightly price, a reviewed calendar and saved house rules
+  - compliance, and a complete host profile
+- **Database backstop:** a CHECK constraint refuses any submitted, live, paused or suspended listing that lacks the required fields, even if application code is bypassed.
+- **Admin review foundation:** `reviewListing()` in `src/server/services/listing-review.ts` supports approve, request changes, reject, suspend and reinstate. It requires `admin:properties:moderate` and records reviewer, reason and timestamp in `AdminAction`. The review UI arrives with the admin phase.
+
+### Compliance (jurisdiction-aware)
+
+- **Storage:** compliance is stored as one `ComplianceDocument` per requirement per listing (unique on `propertyId + type`), tagged with a jurisdiction such as `AU-NSW`.
+- **Requirements are configuration**, in `src/config/jurisdictions.ts`:
+  - NSW requires an STRA registration number, or a declared exemption with a reason.
+  - Other states and territories are set up with no registration requirement and can be tightened later without schema changes.
+- **What's collected:**
+  - registration number and expiry (expired registrations are rejected)
+  - ownership or management status and confirmed authority to list
+  - insurance confirmation
+  - strata scheme answer, plus by-law permission when applicable
+  - acknowledgement of local obligations and planning rules
+  - optional supporting documents (PDF or image), stored **privately**
+- **Statuses:**
+  - "Not submitted" means no record exists.
+  - Hosts only ever create **SUBMITTED** records; any edit resets a record to SUBMITTED.
+  - Only admins can mark records UNDER_REVIEW, APPROVED or REJECTED.
+- **What Roavela claims:** it records what hosts declare and reviews it. It **does not** verify registrations with government registers, and nothing in the UI says a property is legally compliant.
+
+### Photos & storage
+
+- **Storage abstraction** (`src/server/storage.ts`):
+  - `LocalDiskStorage` stores files under `STORAGE_LOCAL_DIR` (default `.data/uploads`, gitignored) for development.
+  - It's refused in production unless `STORAGE_LOCAL_ALLOW_PRODUCTION=true`, because local disk isn't shared or durable.
+  - A Cloudinary or S3 adapter implements the same interface; credentials stay on the server.
+- **Keys** are generated by the server. `public/…` objects are served by `/media/…` (nosniff, sandboxed CSP, no path traversal). `private/…` objects (compliance documents) are only readable through an ownership-checked route.
+- **Upload checks:**
+  - The type is detected from **file contents**: JPEG, PNG or WebP only. SVG and renamed HTML are rejected.
+  - Up to 10 MB per file and up to 24 photos per listing.
+  - **EXIF/XMP metadata, including GPS, is stripped** before storage.
+- **Management:** upload several files (sent one at a time with per-file status), add descriptions, reorder, set the cover (position 0), and delete. Live listings can't drop below the photo minimum.
+
+### Pricing & availability
+
+- **Pricing** is entered in dollars and stored as **integer cents** (`$250` → `25000`). It's validated (strict format, $20–$10,000 per night), with a weekend rate, a cleaning fee, and minimum and maximum stays.
+- **Earnings estimate:** the pricing step shows an estimated host payout for an example 2-night stay. It uses the **active fee schedule** and the shared `calculateFees()`, is labelled as an estimate, and is calculated before processing costs.
+- **Availability** is "open unless blocked":
+  - Hosts block and unblock ranges on a calendar. Ranges merge and split cleanly.
+  - Past dates, dates more than 2 years ahead, and dates overlapping active bookings are rejected.
+  - Blocks are separate from bookings; the database double-booking constraint is unchanged.
+
+### Host security model
+
+- **Identity:** every host Server Action takes the user **from the session**, checks the role permission, rate-limits, and validates with Zod.
+- **Ownership is enforced in the database query.** Properties are only ever loaded through `where: { id, host: { userId } }` (`src/server/services/host-access.ts`). Another host's id behaves exactly like a missing one: pages return **404**, and actions return "not found".
+- **Never read from the client:** `hostId`, `userId`, `role`, `status` and computed prices.
+- **Audit:** `AuditLog` records host actions (profile created, property created, submitted, withdrawn, paused, resumed, archived, edited after review, compliance submitted, document attached) and never includes document contents or addresses. Admin decisions go to `AdminAction`.
+
+**Database changes in Phase 3:** 3 migrations.
+- `phase3_host_marketplace`:
+  - host type and private host fields (legal name, ABN, avatar)
+  - structured house rules and section-progress tracking
+  - the `CHANGES_REQUESTED` status and the `HOUSE`/`GUESTHOUSE` property types
+  - `ComplianceStatus.PENDING_REVIEW` renamed to `UNDER_REVIEW`, preserving data
+  - the `AuditLog` model
+  - draft-stage fields made nullable, backed by the listable-complete CHECK and a coordinate-range CHECK
+- `phase3_listable_check_country_agnostic`: removes the state requirement from the DB check, since not every country has states.
+- `compliance_unique_per_listing`: one compliance record per requirement per listing.
 
 ## Phase 2 at a glance
 
@@ -188,6 +293,9 @@ Optional:
 | `ROUTING_PROVIDER` | `heuristic` (the only implementation today) |
 | `ANALYTICS_PROVIDER` | `console` or `none` |
 | `SEED_DEMO_PASSWORD` | Password for seeded demo accounts |
+| `STORAGE_PROVIDER` | `local` (the only adapter today) |
+| `STORAGE_LOCAL_DIR` | Where the local adapter writes uploads (default `.data/uploads`, gitignored) |
+| `STORAGE_LOCAL_ALLOW_PRODUCTION` | Explicit opt-in to local disk storage in production (not recommended) |
 
 Stripe, Cloudinary and AI variables are placeholders for later phases. Nothing breaks when they are empty.
 
@@ -226,6 +334,26 @@ The seed creates `admin@demo.roavela.test`, `host@demo.roavela.test` and `guest@
   - profile update authorisation
   - password reset: hashing, expiry, invalidation, single use, session revocation, concurrent use
 
+- **Phase 3 unit** (`tests/unit/phase3.test.ts`):
+  - lifecycle transitions (hosts can never approve or publish)
+  - the checklist, including NSW STRA vs other states
+  - integer-cent money parsing and host form validation (including the ABN checksum)
+  - date-range merge and split
+  - content-based image type detection and EXIF/GPS stripping for JPEG, PNG and WebP
+- **Phase 3 integration and security** (`tests/integration/host-marketplace.test.ts`, real Postgres plus temp-dir storage):
+  - becoming a host on the same account, with a forged `ADMIN` role ignored; admins can't host
+  - forged `hostId` and `status` ignored on create
+  - prices stored in cents, and manipulated prices rejected
+  - amenity de-duplication and the pets rule/amenity sync
+  - the database refusing to publish an incomplete listing
+  - photo upload, reorder, cover and delete; disguised and oversized files; the photo limit
+  - calendar rules
+  - submission gating, and the full submit → changes requested → resubmit → approve flow with its audit trail
+  - host self-approval and status forgery rejected
+  - pause, resume and archive rules
+  - compliance saved only as SUBMITTED and reset on edit
+  - an **IDOR matrix** (host B against host A's listing) through both services and Server Actions
+
 Run `npm run test:integration` with the database running. Tests create and delete their own data and don't depend on the seed.
 
 ## Stripe test setup (later phase)
@@ -259,6 +387,21 @@ Payments are not implemented in Phase 1. The schema already models `Payment` and
 - **Errors:** users see generic messages; server logs never include secrets or values from failed env validation.
 - **Privacy:** exact property addresses are not exposed publicly, and reviewer names are shortened.
 
+## Known limitations (Phase 3)
+
+- **Admin review UI:** there is no screen yet (Phase 5). Listings can be approved through `reviewListing()`, for example from a script or test, but not from a page.
+- **Local storage only:** only the local-disk storage adapter exists, so production needs a Cloudinary or S3 adapter first.
+- **Image processing:** images aren't resized or re-encoded; they're validated and have their metadata stripped. Image dimensions aren't recorded.
+- **Location:**
+  - There's no geocoding. Hosts may enter coordinates; otherwise the destination's centre is used and labelled approximate.
+  - The country is fixed to Australia in the form, though the model is country-agnostic.
+- **Compliance:**
+  - Rules are configured for NSW (STRA). Other states have no registration requirement configured yet.
+  - Nothing is verified against government registers, and compliance records aren't reviewed individually yet.
+- **Calendar:** no per-night price overrides, iCal sync, advance-notice or booking-window rules yet.
+- **Pricing:** there's no extra-guest fee. The earnings estimate uses the platform model where fees apply to accommodation plus cleaning, so the host fee on $500 + $80 is $23.20, not $20.
+- **Editing live listings:** edits apply immediately and are audit-logged. They aren't queued for re-review.
+
 ## Known limitations (Phase 2)
 
 - **Not built yet:**
@@ -282,6 +425,7 @@ Payments are not implemented in Phase 1. The schema already models `Payment` and
 
 1. ✅ **Phase 1** — architecture, database, auth, design system, homepage, demo search
 2. ✅ **Phase 2** — customer marketplace: search, filters, pagination, property page, booking preview, favourites, account, password reset, map/routing abstractions
+3. ✅ **Phase 3** — host onboarding, listing drafts, photos, pricing, availability, house rules, jurisdiction-aware compliance, preview, submission lifecycle, admin review foundation
 3. Host portal and 8-step onboarding, compliance submissions
 4. Booking engine (availability calendar, holds, cancellation)
 5. Admin portal (moderation, suspensions, compliance review, fee configuration, audit log UI)
