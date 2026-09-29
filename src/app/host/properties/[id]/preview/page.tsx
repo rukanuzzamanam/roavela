@@ -41,7 +41,7 @@ export default async function PreviewPage({ params }: PageProps) {
 
       <div className="container-page pt-6">
         <div className="mb-8">
-          <SectionStepper propertyId={p.id} sections={checklist.sections} current="preview" />
+          <SectionStepper propertyId={p.id} sections={checklist.sections} current="preview" horizontal />
         </div>
         <PropertyDetailView
           property={preview}

@@ -45,7 +45,15 @@ export default async function HostStartPage() {
           ) : (
             <p className="mt-8 max-w-md rounded-2xl bg-white/10 p-4 text-sm">Administrator accounts can&apos;t host. Use a separate traveller account to list a property.</p>
           )}
-          {!user && <p className="mt-3 text-sm text-eucalypt-100">Already have an account? Log in and you&apos;ll come straight back here.</p>}
+          {!user && (
+            <p className="mt-3 text-sm text-eucalypt-100">
+              Already have an account?{" "}
+              <a href="/login?next=/host/onboarding" className="font-semibold text-white underline underline-offset-4">
+                Log in
+              </a>{" "}
+              and you&apos;ll continue to host onboarding.
+            </p>
+          )}
         </div>
       </section>
 

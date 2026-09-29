@@ -5,8 +5,7 @@ import { AvailabilityManager } from "@/components/host/availability-manager";
 import { ComplianceFileForm } from "@/components/host/host-forms";
 import { SectionStepper, StatusBadge } from "@/components/host/host-ui";
 import { PhotoManager } from "@/components/host/photo-manager";
-import { AmenitiesSection, BasicsSection, ComplianceSection, DetailsSection, LocationSection, PricingSection, RulesSection, type ComplianceValues } from "@/components/host/section-fields";
-import { SectionForm } from "@/components/host/section-form";
+import { AmenitiesSection, BasicsSection, ComplianceSection, ConfirmSection, DetailsSection, LocationSection, PricingSection, RulesSection, type ComplianceValues } from "@/components/host/section-fields";
 import { Icon } from "@/components/ui/icons";
 import { jurisdictionFor } from "@/config/jurisdictions";
 import { toIsoDate, todayInTimeZone } from "@/lib/dates";
@@ -87,9 +86,7 @@ async function SectionBody({
       return (
         <div className="space-y-8">
           <PhotoManager propertyId={p.id} photos={p.images.map((i) => ({ id: i.id, url: i.url, alt: i.alt }))} editable={editable} />
-          <SectionForm propertyId={p.id} section="photos">
-            {() => <p className="text-sm text-mist">Photos save as soon as they upload. Continue when you&apos;re done.</p>}
-          </SectionForm>
+          <ConfirmSection propertyId={p.id} section="photos" note="Photos save as soon as they upload. Continue when you're done." />
         </div>
       );
     case "pricing": {
@@ -118,9 +115,7 @@ async function SectionBody({
             </Link>
             .
           </p>
-          <SectionForm propertyId={p.id} section="availability">
-            {() => <p className="text-sm text-ink-soft">Your property is open for all dates you haven&apos;t blocked. Save to confirm your calendar.</p>}
-          </SectionForm>
+          <ConfirmSection propertyId={p.id} section="availability" note="Your property is open for all dates you haven't blocked. Save to confirm your calendar." />
         </div>
       );
     }

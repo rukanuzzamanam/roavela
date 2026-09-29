@@ -81,7 +81,8 @@ export function getStorage(): StorageProvider {
     // Local disk is lost on redeploys and isn't shared between instances.
     throw new Error("Local file storage is disabled in production. Configure a storage provider.");
   }
-  provider = new LocalDiskStorage(path.resolve(process.cwd(), e.STORAGE_LOCAL_DIR));
+  // Runtime data directory — must not be traced into the server bundle.
+  provider = new LocalDiskStorage(path.resolve(/*turbopackIgnore: true*/ process.cwd(), e.STORAGE_LOCAL_DIR));
   return provider;
 }
 

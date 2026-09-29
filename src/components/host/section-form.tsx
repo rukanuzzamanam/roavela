@@ -1,6 +1,21 @@
 "use client";
 
-import { useActionState, useEffect, useState, type ReactNode } from "react";
+import { startTransition, useActionState, useEffect, useState, type FormEvent, type ReactNode } from "react";
+
+/**
+ * Submit handler that keeps what the user typed. With `<form action={…}>`, React 19 resets
+ * uncontrolled fields after every submission — including failed validation — which would wipe a
+ * host's work. Dispatching inside a transition avoids that; the clicked button's name/value (e.g.
+ * "Save & continue") is preserved via the submitter.
+ */
+export function keepValuesOnSubmit(dispatch: (fd: FormData) => void) {
+  return (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLElement | null;
+    const fd = new FormData(e.currentTarget, submitter);
+    startTransition(() => dispatch(fd));
+  };
+}
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icons";
 import { saveSectionAction, type HostFormState } from "@/server/actions/host";
@@ -43,7 +58,7 @@ export function SectionForm({
   const status = pending ? "Saving…" : dirty ? "Unsaved changes" : state.ok && lastSaved ? "Saved" : state.message ? "Not saved" : "";
 
   return (
-    <form action={action} onChange={() => setDirty(true)} className="space-y-6" noValidate>
+    <form onSubmit={keepValuesOnSubmit(action)} onChange={() => setDirty(true)} className="space-y-6" noValidate>
       <input type="hidden" name="propertyId" value={propertyId} />
       <input type="hidden" name="section" value={section} />
       <FormMessage state={state} />

@@ -164,6 +164,11 @@ export function LocationSection({
   );
 }
 
+/** A section with no fields of its own (photos, calendar): saving confirms the host has reviewed it. */
+export function ConfirmSection({ propertyId, section, note }: { propertyId: string; section: "photos" | "availability"; note: string }) {
+  return <SectionForm propertyId={propertyId} section={section}>{() => <p className="text-sm text-ink-soft">{note}</p>}</SectionForm>;
+}
+
 // ── Description ──
 export function DetailsSection({ propertyId, values }: { propertyId: string; values: { summary: string | null; description: string | null } }) {
   return (

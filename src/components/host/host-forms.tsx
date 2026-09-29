@@ -15,6 +15,7 @@ import {
   type HostFormState,
 } from "@/server/actions/host";
 import { FormMessage } from "./host-ui";
+import { keepValuesOnSubmit } from "./section-form";
 import { BasicsFields } from "./section-fields";
 
 export interface HostProfileValues {
@@ -32,7 +33,7 @@ export function HostProfileForm({ values, submitLabel, then }: { values: Partial
   const [hostType, setHostType] = useState(values.hostType ?? "INDIVIDUAL");
   const e = state.fieldErrors;
   return (
-    <form action={action} className="space-y-8" noValidate>
+    <form onSubmit={keepValuesOnSubmit(action)} className="space-y-8" noValidate>
       {then && <input type="hidden" name="then" value={then} />}
       <FormMessage state={state} />
       {state.ok && (
@@ -103,7 +104,7 @@ export function AvatarForm({ current }: { current: string | null }) {
 export function NewPropertyForm() {
   const [state, action, pending] = useActionState<HostFormState, FormData>(createPropertyAction, {});
   return (
-    <form action={action} className="space-y-6" noValidate>
+    <form onSubmit={keepValuesOnSubmit(action)} className="space-y-6" noValidate>
       <FormMessage state={state} />
       <BasicsFields errors={state.fieldErrors} />
       <Button type="submit" size="lg" disabled={pending}>

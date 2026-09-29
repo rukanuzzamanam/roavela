@@ -55,10 +55,10 @@ export function HostShell({ current, title, eyebrow, actions, children }: { curr
 }
 
 /** Section navigation for a listing. Horizontal scroller on mobile, sidebar on desktop. */
-export function SectionStepper({ propertyId, sections, current }: { propertyId: string; sections: SectionStatus[]; current?: string }) {
+export function SectionStepper({ propertyId, sections, current, horizontal = false }: { propertyId: string; sections: SectionStatus[]; current?: string; /** Keep a single scrolling row on every screen size (e.g. above the preview). */ horizontal?: boolean }) {
   return (
     <nav aria-label="Listing sections">
-      <ol className="scrollbar-none -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 lg:mx-0 lg:flex-col lg:gap-1 lg:overflow-visible lg:px-0">
+      <ol className={cn("scrollbar-none -mx-4 flex gap-2 overflow-x-auto px-4 pb-1", !horizontal && "lg:mx-0 lg:flex-col lg:gap-1 lg:overflow-visible lg:px-0")}>
         {sections.map((s, i) => (
           <li key={s.key} className="shrink-0">
             <Link

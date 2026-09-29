@@ -8,6 +8,7 @@ import { addDays, parseIsoDate, toIsoDate } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { availabilityAction, type HostFormState } from "@/server/actions/host";
 import { FormMessage } from "./host-ui";
+import { keepValuesOnSubmit } from "./section-form";
 
 interface Range {
   start: string;
@@ -28,13 +29,19 @@ export function AvailabilityManager({ propertyId, today, blocked, booked, editab
   const todayDate = parseIsoDate(today);
   const months = useMemo(() => [0, 1].map((m) => monthGrid(todayDate.getUTCFullYear(), todayDate.getUTCMonth() + monthOffset + m)), [monthOffset, todayDate]);
 
+  // First click selects one night and sets an anchor; a second, later click extends the range
+  // through that night (end is exclusive). Clicking an earlier day starts a new selection.
+  const [anchor, setAnchor] = useState<string | null>(null);
+  const nextDay = (iso: string) => toIsoDate(addDays(parseIsoDate(iso), 1));
   function pick(iso: string) {
-    if (!start || (start && end) || iso <= start) {
-      setStart(iso);
-      setEnd(toIsoDate(addDays(parseIsoDate(iso), 1)));
+    if (anchor && iso >= anchor) {
+      setStart(anchor);
+      setEnd(nextDay(iso));
+      setAnchor(null);
     } else {
-      // Clicking a second day selects through that night (end is exclusive).
-      setEnd(toIsoDate(addDays(parseIsoDate(iso), 1)));
+      setAnchor(iso);
+      setStart(iso);
+      setEnd(nextDay(iso));
     }
   }
   const selected = (iso: string) => Boolean(start && end && iso >= start && iso < end);
@@ -100,7 +107,7 @@ export function AvailabilityManager({ propertyId, today, blocked, booked, editab
       </div>
 
       {editable && (
-        <form action={action} className="space-y-4 rounded-2xl border border-ink/10 bg-white p-5">
+        <form onSubmit={keepValuesOnSubmit(action)} className="space-y-4 rounded-2xl border border-ink/10 bg-white p-5">
           <input type="hidden" name="propertyId" value={propertyId} />
           <FormMessage state={state} />
           {state.ok && (
