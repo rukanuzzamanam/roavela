@@ -4,12 +4,57 @@
 
 Roavela is an Australian travel marketplace built around one idea: discover stays and weekend escapes by **how far you want to drive**. It starts with Sydney as the primary origin (Blue Mountains, Hunter Valley, Kiama, Jervis Bay…), but nothing in the architecture is tied to Sydney, NSW or Australia.
 
-> **Status: Phase 3 (host onboarding & property management).**
+> **Status: Phase 4 (booking engine, checkout & Stripe test payments).**
 >
-> - **Travellers** can search, view stays, preview prices, save stays and manage their account (Phase 2).
-> - **Property owners and managers** can become hosts, build listings section by section, upload photos, set pricing and availability, provide compliance information, preview, and submit for review (Phase 3).
+> - **Travellers** can search, view stays, save stays and manage their account (Phase 2), and now **book and pay** — in Stripe **test mode** (Phase 4).
+> - **Property owners and managers** can become hosts, build listings, set pricing and availability, submit for review (Phase 3), and see their bookings and estimated proceeds (Phase 4).
 > - **Submitted listings are not public until an admin approves them.**
-> - **Not available yet:** online booking and payments, and the admin review UI. See [Roadmap](#roadmap).
+> - **LIVE PAYMENTS ARE NOT ENABLED.** Stripe runs in test mode only and live keys are refused. No host payouts are made.
+> - **Not available yet:** live payments, host payouts, the admin review UI. See [Roadmap](#roadmap).
+
+## Phase 4 at a glance — booking & payments
+
+> **LIVE PAYMENTS ARE NOT ENABLED.** Everything below runs against Stripe **test mode**, or a clearly labelled simulated provider in development when no Stripe keys are set.
+
+**Server owns pricing. Database owns availability. The Stripe webhook owns payment confirmation. The client owns none of those.**
+
+| Route | What it does |
+|---|---|
+| `/stays/[slug]/reserve` | Trip review: the server re-validates the stay and shows its price, the cancellation policy and house rules. "Continue to payment" creates a 20-minute hold. |
+| `/checkout/[reference]` | Checkout for the guest's own hold: TEST MODE banner, property summary, dates, guests, price breakdown, cancellation policy, house rules, customer details, Stripe Payment Element (or simulated buttons), hold countdown, "Pay securely". |
+| `/checkout/[reference]/complete` | Status/confirmation page. Shows the **server's** state only and polls while the webhook is pending. Stripe's `redirect_status` is ignored. |
+| `/account/bookings` | Upcoming / Past / Cancelled trips |
+| `/account/bookings/[reference]` | Booking detail, payment status, address (confirmed bookings only), cancellation with a refund preview |
+| `/host/bookings`, `/host/bookings/[reference]` | Bookings on the host's own listings: guest first name, party size, dates and a proceeds breakdown |
+| `POST /api/webhooks/stripe` | Signature-verified Stripe webhook — the only way a Stripe-paid booking is confirmed |
+| `GET /api/cron/release-holds` | Housekeeping (Bearer `CRON_SECRET`): expire lapsed holds and cancel their unpaid PaymentIntents |
+
+### Booking flow
+
+1. **Reserve.** The server validates the request (published listing, dates, min/max nights, guest count, blocked dates, overlaps) and prices it from database rates and the active fee schedule. It stores a PENDING booking that *is* the quote, with an immutable snapshot (per-night rates, fee schedule id and rates, rules version, cancellation policy, house rules). The dates are held for 20 minutes by the database exclusion constraint.
+2. **Checkout.** The server creates one Payment and one PaymentIntent, taking the amount and currency from the booking, with an idempotency key. The browser collects card details inside Stripe's iframe.
+3. **Webhook.** The signature is verified, the event is de-duplicated, and the reference, amount and currency are checked. In one transaction the Payment becomes SUCCEEDED and the Booking CONFIRMED; emails (guest and host) and analytics follow the commit.
+
+- **Lifecycle** (`src/lib/booking-lifecycle.ts`): `PENDING → CONFIRMED | EXPIRED`, `CONFIRMED → CANCELLED | REFUND_PENDING | COMPLETED`, `REFUND_PENDING → REFUNDED`. Status is never accepted from a client; server code names an event and the table decides.
+- **Holds:** a PENDING booking blocks the dates only while `expiresAt` is in the future (search, quotes and host blocks use the same rule). Lapsed holds are marked `EXPIRED` on read, before any overlapping insert, and by the cron route. A CHECK constraint forces every PENDING booking to have an expiry.
+- **Failed payments** never confirm anything. The attempt is recorded on the Payment (`FAILED` plus the decline code); the guest can retry until the hold lapses, after which the dates are released.
+- **Late payments:** if a success arrives after the hold lapsed, the booking is confirmed only if the dates are still free; otherwise the full amount is refunded automatically. It is never double-booked.
+- **Idempotency:**
+  - Repeated or concurrent "Continue to payment" returns the guest's existing hold.
+  - There is one Payment per booking and provider (unique index), and PaymentIntents use a deterministic idempotency key.
+  - Each webhook event is recorded once (`WebhookEvent`, unique per provider and event id).
+  - Payment and Booking rows are locked `FOR UPDATE` while an event is applied, so duplicate and out-of-order events are harmless.
+- **References** like `ROA-8F4K2P`: 6 characters from a 31-symbol unambiguous alphabet via `crypto.randomInt` (about 887 million combinations), unique in the database and redrawn on collision.
+- **Cancellation** uses the booking's **policy snapshot**:
+  - Flexible: full refund at least 1 day before check-in; none on the day.
+  - Moderate: full refund 5+ days before; after that, 50% of accommodation plus the cleaning fee.
+  - Strict: 50% of accommodation plus the cleaning fee 14+ days before; after that, none.
+  - When a refund is due, the booking becomes `REFUND_PENDING` and a refund is requested from the provider. It only becomes `REFUNDED` when the provider reports it (`charge.refunded`). A failed refund request leaves it `REFUND_PENDING` and is logged — refunds are never faked.
+- **Emails** (`src/server/emails/booking-emails.ts`): booking confirmed, payment failed, booking cancelled, host new booking. They are sent after the transaction commits; failures are logged and never undo a booking. Hosts get the guest's first name only.
+- **Analytics:** `booking_quote_created`, `checkout_started`, `payment_started`, `payment_succeeded`, `payment_failed`, `booking_confirmed`, `booking_cancelled`, `refund_requested` — ids and amounts only, no personal data.
+- **Structured logs** (`src/server/log.ts`): one JSON line per event with identifiers only, plus a redaction pass for secret-looking values and sensitive keys.
+- **Stripe Connect:** prepared only (`HostProfile.stripeAccountId`, `payoutsEnabled`, `chargesEnabled`, the `Payout` model). **No payouts are made.**
+- **Currency:** every booking stores its currency; only `AUD` is accepted. **No GST is calculated or invented** — prices are shown as the total the guest pays.
 
 ## Phase 3 at a glance — hosts
 
@@ -117,7 +162,7 @@ DRAFT / CHANGES_REQUESTED / REJECTED / PAUSED ─archive (host)─▶ ARCHIVED
 |---|---|
 | `/search` | Search by origin, destination (`?destination=`), max drive, dates and guests. Filters: price, type, bedrooms, bathrooms, capacity and amenities. Sort by recommended, price, rating or estimated drive. Server-side pagination (12 per page). List and map views. Every state lives in the URL. |
 | `/stays/[slug]` | Property page: gallery (full-screen, keyboard-navigable), highlights, grouped amenities, house rules, cancellation policy, approximate-area map with nearby attractions, review category averages, host info, sticky booking-preview card and a mobile bottom bar. |
-| `/stays/[slug]/reserve` | Booking **preview** only. Re-validates availability and shows the estimated total. States that no booking was made and nothing was charged. Performs no writes. |
+| `/stays/[slug]/reserve` | Booking **preview** only in Phase 2 (replaced by the trip review and checkout in Phase 4). |
 | `/saved` | The signed-in traveller's saved stays, paginated. |
 | `/account` | Dashboard: profile, saved-stays preview, read-only trip history (with an empty state when there are no bookings). |
 | `/account/profile` | Edit name and phone. Email is read-only until verified email change exists. |
@@ -193,18 +238,19 @@ Key design decisions:
 
 ### Marketplace fee maths
 
-Fees apply to accommodation + cleaning. With the default schedule (6% guest fee, 4% host commission):
+Since Phase 4 (rule version `2026-09.accommodation-fee-base`), Roavela's fees apply to **accommodation only**. The cleaning fee passes through to the host in full, with no commission. With the default schedule (6% guest fee, 4% host commission):
 
 | | |
 |---|---|
-| Stay subtotal | $800.00 |
-| Guest service fee (6%) | $48.00 |
-| **Guest pays** | **$848.00** |
-| Host commission (4%) | $32.00 |
-| Host gross payout | $768.00 |
-| Platform **gross** revenue | $80.00 |
+| Accommodation | $500.00 |
+| Cleaning fee | $80.00 |
+| Guest service fee (6% of accommodation) | $30.00 |
+| **Guest pays** | **$610.00** |
+| Host commission (4% of accommodation) | $20.00 |
+| Host gross proceeds (500 − 20 + 80) | $560.00 |
+| Platform **gross** revenue (30 + 20) | $50.00 |
 
-Gross platform revenue is not profit: payment-processing costs are tracked separately (`Payment.processingFeeCents`).
+A database CHECK enforces `guest total = host proceeds + platform revenue`. Each booking snapshots the fee schedule id, rates and rule version, so later schedule changes never alter existing bookings. Gross platform revenue is not profit: payment-processing costs are tracked separately (`Payment.processingFeeCents`).
 
 ## Folder structure
 
@@ -297,7 +343,13 @@ Optional:
 | `STORAGE_LOCAL_DIR` | Where the local adapter writes uploads (default `.data/uploads`, gitignored) |
 | `STORAGE_LOCAL_ALLOW_PRODUCTION` | Explicit opt-in to local disk storage in production (not recommended) |
 
-Stripe, Cloudinary and AI variables are placeholders for later phases. Nothing breaks when they are empty.
+| `STRIPE_MODE` | Must be `test`. Any other value disables payments |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Stripe **test** secret key (`sk_test_`/`rk_test_`) and webhook secret (`whsec_`). Server only. Live keys are refused |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe **test** publishable key (`pk_test_`) |
+| `PAYMENT_PROVIDER` | `auto` (default), `stripe` or `mock`. Without a secret key, development uses the simulated provider; production refuses it |
+| `CRON_SECRET` | Bearer secret for `/api/cron/release-holds` (the route is disabled when unset) |
+
+Cloudinary and AI variables are placeholders for later phases. Nothing breaks when they are empty.
 
 ### Demo accounts
 
@@ -354,11 +406,47 @@ The seed creates `admin@demo.roavela.test`, `host@demo.roavela.test` and `guest@
   - compliance saved only as SUBMITTED and reset on edit
   - an **IDOR matrix** (host B against host A's listing) through both services and Server Actions
 
-Run `npm run test:integration` with the database running. Tests create and delete their own data and don't depend on the seed.
+- **Phase 4 unit** (`tests/unit/phase4.test.ts`):
+  - the commission worked example (500 + 80 → 610 / 560 / 50), no commission on cleaning, server-side weekend pricing
+  - every legal and illegal lifecycle transition
+  - cancellation refunds per policy and boundary day, never more than was paid
+  - the payment config guard: live keys (`sk_live_`, `rk_live_`, `pk_live_`) and non-test modes refused, the mock refused in production
+  - reference format and unpredictability; booking input stripping price, status, commission and currency
+  - Stripe webhook signatures (valid, wrong secret, tampered body, missing, replayed) and event mapping
+  - log redaction
+- **Phase 4 integration** (`tests/integration/booking-payments.test.ts`):
+  - server pricing and snapshot, the 20-minute hold, and a tampered price, commission, currency and status ignored through the Server Action
+  - idempotent reserve (concurrent double-submit), guest count, min/max nights, past, far-future and impossible dates, unpublished listings, the host's own listing, blocked dates
+  - **concurrency: Customer A (10–12) vs Customer B (11–13) at once — exactly one wins**; lapsed holds release their dates
+  - exactly one Payment however often checkout opens; a verified success confirms once; duplicate and concurrent duplicate events; confirmed dates unavailable in search and booking
+  - a failed payment never confirms and releases the dates after expiry
+  - amount, currency and reference mismatches rejected; unknown payments ignored; a failure after success ignored; late payments confirmed or refunded
+  - cancellation: full refund → REFUND_PENDING → REFUNDED; a partial refund inside 5 days
+  - **IDOR:** another customer can't view, pay, simulate or cancel; another host can't see the booking; hosts see the first name only and never see unpaid holds
+  - the webhook route: unsigned, wrong-secret and tampered requests (400), a verified success, a redelivery (duplicate), a wrong amount, a missing reference, livemode events, failures, and no stored payloads
 
-## Stripe test setup (later phase)
+Run `npm run test:integration` with the database running. With `prisma dev`, integration tests use a single pooled connection (see `vitest.integration.config.mts`), because that local server garbles concurrent connections. The concurrency tests still race at the application level and the database constraint decides. Against a real PostgreSQL, set `TEST_DATABASE_POOL_MAX` to also race parallel sessions. Tests create and delete their own data and don't depend on the seed.
 
-Payments are not implemented in Phase 1. The schema already models `Payment` and `Payout` with provider IDs, `HostProfile.stripeAccountId` for Stripe Connect, and separate processing-fee tracking. The payments phase will use Stripe **test mode** only, with a mock provider when keys are absent. Card data will never touch Roavela's servers.
+## Stripe test setup
+
+> **LIVE PAYMENTS ARE NOT ENABLED.** Only Stripe test mode is supported. Never put live keys in any environment; they are refused.
+
+Without keys, development uses a **simulated provider**. Checkout shows a "Pay securely" button and a "Simulate a declined card" button, which send a simulated event through the same verification and confirmation code as a real webhook. No card form is shown and nothing is charged.
+
+To use real Stripe test mode:
+
+1. In the [Stripe Dashboard](https://dashboard.stripe.com/test/apikeys), switch to **Test mode** and copy the test keys into `.env`: `STRIPE_SECRET_KEY=sk_test_…`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_…`, `STRIPE_MODE=test`.
+2. Install the [Stripe CLI](https://docs.stripe.com/stripe-cli) and forward webhooks: `stripe listen --forward-to localhost:3000/api/webhooks/stripe`. Copy the printed `whsec_…` into `STRIPE_WEBHOOK_SECRET` and restart `npm run dev`.
+3. Book a stay and pay with a [Stripe test card](https://docs.stripe.com/testing):
+
+| Case | Card | Expected |
+|---|---|---|
+| Success | `4242 4242 4242 4242` | The status page shows "You're booked!" once the webhook arrives |
+| Generic decline | `4000 0000 0000 0002` | An error is shown, the booking stays unconfirmed, and retrying is possible until the hold lapses |
+| Insufficient funds | `4000 0000 0000 9995` | As above, with the failure code recorded |
+| 3-D Secure | `4000 0025 0000 3155` | An authentication modal, then success |
+
+Use any future expiry date, any CVC and any postcode. Webhook events handled: `payment_intent.succeeded`, `payment_intent.payment_failed`, `payment_intent.processing`, `payment_intent.canceled` and `charge.refunded`; others are recorded as ignored. Card data never reaches Roavela: it is entered in Stripe's iframe, and Roavela stores only PaymentIntent ids, amounts, statuses and decline codes.
 
 ## Deployment
 
@@ -380,12 +468,30 @@ Payments are not implemented in Phase 1. The schema already models `Payment` and
   - sign-up (per IP)
   - password-reset requests (per IP, plus a silent per-email limit) and submissions
   - profile updates and favourites (per user)
+- **Payments:**
+  - Stripe test mode only: live keys are refused, `STRIPE_MODE` must be `test`, and livemode webhook events are rejected.
+  - Webhooks are signature-verified with replay protection, and a browser redirect never confirms a booking.
+  - Amount and currency always come from the booking row.
+  - `WebhookEvent` stores ids and outcomes, never payloads.
+  - Secret keys never leave the server (checked against the client bundle).
+- **Booking rate limits:** reserve (quote), payment start, simulated payments and cancellation (per user), and the webhook (per IP).
 - **Never trusted from the client:** user id, role, ownership, prices and fees. Actions derive the user from the session. Quotes are computed from database prices and the active fee schedule.
 - **Location privacy:** public data carries only a locality and coordinates rounded to about 1 km. Property maps show an area, not a pin.
 - **Structured data:** JSON-LD is only emitted for non-demo listings, and it is escaped against `</script>` injection. Demo listings are `noindex, nofollow`.
 - **Headers:** `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, HSTS and `Permissions-Policy`. `X-Powered-By` is removed.
 - **Errors:** users see generic messages; server logs never include secrets or values from failed env validation.
 - **Privacy:** exact property addresses are not exposed publicly, and reviewer names are shortened.
+
+## Known limitations (Phase 4)
+
+- **LIVE PAYMENTS ARE NOT ENABLED**, and there are **no host payouts**. Stripe Connect is modelled but hosts aren't onboarded.
+- **Real Stripe test mode is not exercised by the automated tests**, because no keys are available to them. Webhook verification and event handling are tested with locally signed Stripe-format events, and the PaymentIntent and refund calls use the SDK as documented. Follow [Stripe test setup](#stripe-test-setup) with your own test keys to exercise the full round trip.
+- **Refunds** through Stripe are requested and then completed by the `charge.refunded` webhook; the simulated provider covers this path in tests. A refund that fails stays `REFUND_PENDING` and needs manual follow-up (there's no admin UI yet).
+- **Guest cancellation only.** Hosts can't cancel, admins have no booking tools yet, and stays aren't automatically marked `COMPLETED`.
+- **Holds** last 20 minutes. Stale PaymentIntents are cancelled only when the cron route runs.
+- **Single currency (AUD).** There's no GST or tax calculation, and no invoices or receipts beyond the confirmation email.
+- **Host guest data** is intentionally minimal (first name and party size), and there's no messaging.
+- **`prisma dev`** can't run truly parallel connections; see [Testing](#testing).
 
 ## Known limitations (Phase 3)
 
@@ -399,7 +505,7 @@ Payments are not implemented in Phase 1. The schema already models `Payment` and
   - Rules are configured for NSW (STRA). Other states have no registration requirement configured yet.
   - Nothing is verified against government registers, and compliance records aren't reviewed individually yet.
 - **Calendar:** no per-night price overrides, iCal sync, advance-notice or booking-window rules yet.
-- **Pricing:** there's no extra-guest fee. The earnings estimate uses the platform model where fees apply to accommodation plus cleaning, so the host fee on $500 + $80 is $23.20, not $20.
+- **Pricing:** there's no extra-guest fee. (Phase 4 changed the fee base to accommodation only, so the host fee on $500 + $80 is now $20.)
 - **Editing live listings:** edits apply immediately and are audit-logged. They aren't queued for re-review.
 
 ## Known limitations (Phase 2)
@@ -426,12 +532,11 @@ Payments are not implemented in Phase 1. The schema already models `Payment` and
 1. ✅ **Phase 1** — architecture, database, auth, design system, homepage, demo search
 2. ✅ **Phase 2** — customer marketplace: search, filters, pagination, property page, booking preview, favourites, account, password reset, map/routing abstractions
 3. ✅ **Phase 3** — host onboarding, listing drafts, photos, pricing, availability, house rules, jurisdiction-aware compliance, preview, submission lifecycle, admin review foundation
-3. Host portal and 8-step onboarding, compliance submissions
-4. Booking engine (availability calendar, holds, cancellation)
+4. ✅ **Phase 4** — booking engine, checkout, Stripe **test-mode** payments, webhooks, cancellation and refunds, customer and host booking pages
 5. Admin portal (moderation, suspensions, compliance review, fee configuration, audit log UI)
 6. Road-trip discovery (`/explore`), destination SEO pages, sitemap, robots.txt, structured data
 7. AI trip planner (provider interface + mock)
-8. Payments (Stripe Connect, test mode) and payouts
+8. Live payments, Stripe Connect onboarding and payouts (after a separate review)
 9. Hardening: CSP, shared rate limiting, observability, E2E tests
 
 Longer term: all Australian cities, international destinations, routing APIs and EV trip planning, dynamic pricing, iCal sync, multi-currency and multi-language support, native apps and PMS integrations.
