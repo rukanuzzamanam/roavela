@@ -56,6 +56,13 @@ export const RATE_LIMITS = {
   passwordResetRequestByIp: { limit: 5, windowMs: 15 * 60_000 },
   passwordResetRequestByEmail: { limit: 3, windowMs: 60 * 60_000 },
   passwordResetSubmit: { limit: 10, windowMs: 15 * 60_000 },
+  // Host tools: generous enough for normal editing, tight enough to stop automated abuse.
+  hostOnboarding: { limit: 20, windowMs: 60 * 60_000 },
+  propertyCreate: { limit: 10, windowMs: 60 * 60_000 },
+  hostSave: { limit: 300, windowMs: 60 * 60_000 },
+  photoUpload: { limit: 120, windowMs: 60 * 60_000 },
+  complianceUpload: { limit: 30, windowMs: 60 * 60_000 },
+  listingSubmit: { limit: 20, windowMs: 60 * 60_000 },
 } as const satisfies Record<string, RateLimitRule>;
 
 const globalForLimiter = globalThis as unknown as { rateLimiter?: RateLimiter };

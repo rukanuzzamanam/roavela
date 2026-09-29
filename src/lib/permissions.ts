@@ -12,8 +12,11 @@ export const PERMISSIONS = {
   "favourite:manage": ["CUSTOMER", "HOST"],
   "booking:create": ["CUSTOMER", "HOST"],
   "review:create": ["CUSTOMER", "HOST"],
+  /** Travellers can upgrade their own account to a host account. Admins cannot. */
+  "host:become": ["CUSTOMER"],
   "host:portal": ["HOST"],
   "property:create": ["HOST"],
+  "property:manage": ["HOST"],
   "admin:portal": ["ADMIN"],
   "admin:properties:moderate": ["ADMIN"],
   "admin:users:manage": ["ADMIN"],

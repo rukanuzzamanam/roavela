@@ -16,6 +16,15 @@ export type AnalyticsEvent =
   | { name: "account_profile_updated"; properties: { fields: string[] } }
   | { name: "password_reset_requested"; properties: Record<string, never> }
   | { name: "password_reset_completed"; properties: Record<string, never> }
+  | { name: "host_onboarding_started"; properties: Record<string, never> }
+  | { name: "host_profile_completed"; properties: { hostType: string } }
+  | { name: "property_creation_started"; properties: Record<string, never> }
+  | { name: "property_created"; properties: { propertyId: string; type: string } }
+  | { name: "property_photo_uploaded"; properties: { propertyId: string } }
+  | { name: "property_pricing_completed"; properties: { propertyId: string } }
+  | { name: "property_previewed"; properties: { propertyId: string } }
+  | { name: "property_submitted"; properties: { propertyId: string } }
+  | { name: "property_paused"; properties: { propertyId: string } }
   | { name: "checkout_started"; properties: { propertyId: string; nights: number } }
   | { name: "booking_completed"; properties: { bookingId: string } }
   | { name: "host_signup_started"; properties: Record<string, never> }
