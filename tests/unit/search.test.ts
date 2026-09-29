@@ -84,9 +84,10 @@ describe("buildPropertyWhere", () => {
     const c = conditions(p);
     const checkIn = new Date("2026-10-16T00:00:00Z");
     const checkOut = new Date("2026-10-18T00:00:00Z");
-    expect(c).toContainEqual({
-      bookings: { none: { status: { in: ["PENDING", "CONFIRMED"] }, checkIn: { lt: checkOut }, checkOut: { gt: checkIn } } },
-    });
+    // Phase 4: a PENDING booking only blocks while its checkout hold is live.
+    const bookingRule = c.find((x) => "bookings" in x) as { bookings: { none: Record<string, unknown> } };
+    expect(bookingRule.bookings.none).toMatchObject({ checkIn: { lt: checkOut }, checkOut: { gt: checkIn } });
+    expect(bookingRule.bookings.none.OR).toEqual([{ status: "CONFIRMED" }, { status: "PENDING", expiresAt: { gt: expect.any(Date) } }]);
     expect(c).toContainEqual({ blockedDates: { none: { startDate: { lt: checkOut }, endDate: { gt: checkIn } } } });
     expect(c).toContainEqual({ minNights: { lte: 2 } });
   });

@@ -4,7 +4,7 @@ import { todayInTimeZone } from "@/lib/dates";
 import { MAX_BLOCK_AHEAD_DAYS } from "@/lib/validation/host";
 import { prisma } from "@/server/db";
 import { loadEditableProperty, noteEdit, withSection, type HostResult } from "./host-access";
-import { ACTIVE_BOOKING_STATUSES } from "./search-query";
+import { activeBookingWhere } from "./search-query";
 
 /**
  * Host calendar. A property is open on every date unless blocked. Host blocks are stored as
@@ -48,7 +48,7 @@ export async function setDatesBlocked(userId: string, propertyId: string, range:
 
   if (blocked) {
     const clash = await prisma.booking.count({
-      where: { propertyId: p.id, status: { in: [...ACTIVE_BOOKING_STATUSES] }, checkIn: { lt: range.end }, checkOut: { gt: range.start } },
+      where: { propertyId: p.id, ...activeBookingWhere(), checkIn: { lt: range.end }, checkOut: { gt: range.start } },
     });
     if (clash > 0) return { ok: false, error: "conflict", message: "Some of those dates are already booked, so they can't be blocked." };
   }

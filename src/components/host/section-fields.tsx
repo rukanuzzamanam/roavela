@@ -8,7 +8,7 @@ import { AU_STATES, type JurisdictionRequirements } from "@/config/jurisdictions
 import { CANCELLATION_COPY } from "@/config/policies";
 import { PROPERTY_TYPE_LABELS } from "@/config/search";
 import { formatMoney } from "@/lib/money";
-import { calculateFees, type FeeRates } from "@/lib/pricing";
+import { splitStayAmounts, type FeeRates } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
 import { HOST_PROPERTY_TYPES, parseMoneyToCents } from "@/lib/validation/host";
 import { SectionForm } from "./section-form";
@@ -268,21 +268,21 @@ function EarningsPreview({ nightly, cleaning, fees, currency }: { nightly: strin
     );
   }
   const accommodation = nightlyCents * nights;
-  const f = calculateFees(accommodation + cleaningCents, fees);
+  const f = splitStayAmounts(accommodation, cleaningCents, fees);
   return (
     <aside className="h-fit rounded-2xl border border-ink/10 bg-white p-5" aria-label="Estimated earnings" aria-live="polite">
       <p className="text-sm font-bold tracking-wider text-ochre-600 uppercase">Example: 2-night weeknight stay</p>
       <dl className="mt-3 space-y-2 text-[0.9375rem]">
         <Row label={`${money(nightlyCents)} × ${nights} nights`} value={money(accommodation)} />
         <Row label="Cleaning fee" value={money(cleaningCents)} />
-        <Row label={`Roavela host fee (${fees.hostCommissionBps / 100}%)`} value={`−${money(f.hostCommissionCents)}`} />
+        <Row label={`Roavela host fee (${fees.hostCommissionBps / 100}% of accommodation)`} value={`−${money(f.hostCommissionCents)}`} />
         <div className="flex justify-between gap-4 border-t border-ink/10 pt-2 font-bold">
           <dt>Estimated earnings</dt>
           <dd className="tabular-nums">{money(f.hostPayoutCents)}</dd>
         </div>
       </dl>
       <p className="mt-3 text-xs text-mist">
-        Estimate only, before any payment-processing costs or taxes. Guests also pay a separate service fee ({money(f.guestServiceFeeCents)} on this stay). Weekend rates aren&apos;t included in this example.
+        Estimate only, before any payment-processing costs or taxes. The cleaning fee is passed to you in full. Guests also pay a separate service fee ({money(f.guestServiceFeeCents)} on this stay). Weekend rates aren&apos;t included in this example.
       </p>
     </aside>
   );

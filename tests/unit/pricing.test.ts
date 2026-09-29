@@ -66,8 +66,14 @@ describe("quoteStay", () => {
     expect(q.nights).toBe(2);
     expect(q.accommodationCents).toBe(47_000);
     expect(q.subtotalCents).toBe(55_000);
-    expect(q.guestServiceFeeCents).toBe(3_300);
-    expect(q.guestTotalCents).toBe(58_300);
+    // Phase 4 rule: fees apply to accommodation only; cleaning passes through to the host.
+    // (Previously 6% of 55_000 = 3_300 / total 58_300.)
+    expect(q.feeBaseCents).toBe(47_000);
+    expect(q.guestServiceFeeCents).toBe(2_820);
+    expect(q.guestTotalCents).toBe(57_820);
+    expect(q.hostCommissionCents).toBe(1_880);
+    expect(q.hostPayoutCents).toBe(47_000 - 1_880 + 8_000);
+    expect(q.guestTotalCents).toBe(q.hostPayoutCents + q.platformRevenueCents);
   });
 
   it("applies weekend pricing to Friday and Saturday nights only", () => {

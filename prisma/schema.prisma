@@ -93,12 +93,27 @@ enum BlockedDateSource {
   ICAL_IMPORT
 }
 
+/// Booking lifecycle (transitions in src/lib/booking-lifecycle.ts):
+///   PENDING (awaiting payment; holds the dates until expiresAt)
+///     → CONFIRMED (verified payment webhook) | EXPIRED (hold lapsed; dates released)
+///   CONFIRMED → COMPLETED | CANCELLED (no refund due) | REFUND_PENDING (refund requested)
+///   REFUND_PENDING → REFUNDED (refund confirmed by the payment provider)
+/// Only PENDING and CONFIRMED hold inventory (see the Booking_no_overlap exclusion constraint).
+/// A failed card attempt is recorded on Payment; the PENDING booking stays payable until it expires.
 enum BookingStatus {
   PENDING
   CONFIRMED
   CANCELLED
   COMPLETED
   REFUNDED
+  EXPIRED
+  REFUND_PENDING
+}
+
+enum WebhookEventStatus {
+  PROCESSED
+  IGNORED
+  FAILED
 }
 
 enum PaymentStatus {
@@ -509,11 +524,21 @@ model Booking {
   guestServiceFeeBps   Int
   hostCommissionBps    Int
   feeScheduleId        String?
+  /// Immutable pricing detail at booking time: per-night rates, fee base, rule version.
+  pricingSnapshot      Json?
 
+  /// Policy and rules the guest agreed to. Later host edits never change an existing booking.
+  cancellationPolicy CancellationPolicy?
+  houseRulesSnapshot Json?
+
+  /// PENDING bookings hold the dates only until this time; afterwards they are EXPIRED.
+  expiresAt          DateTime?
   specialRequests    String?
   confirmedAt        DateTime?
   cancelledAt        DateTime?
   cancellationReason String?
+  /// Refund due under the policy snapshot when cancelled (minor units).
+  refundDueCents     Int?
   completedAt        DateTime?
   isDemo             Boolean   @default(false)
   createdAt          DateTime  @default(now())
@@ -530,6 +555,7 @@ model Booking {
   @@index([propertyId, status])
   @@index([guestId, createdAt])
   @@index([status, checkIn])
+  @@index([status, expiresAt])
 }
 
 model Payment {
@@ -551,8 +577,27 @@ model Payment {
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
 
   @@unique([provider, providerPaymentId])
-  @@index([bookingId])
+  /// One payment record per booking per provider: repeated clicks/retries reuse it (idempotency).
+  @@unique([bookingId, provider])
   @@index([status])
+}
+
+/// Every payment-provider webhook delivery we accept, for de-duplication and audit. Stores the event
+/// id, type and outcome only — never the full payload (which can contain personal data).
+model WebhookEvent {
+  id              String             @id @default(cuid())
+  provider        String // "stripe" | "mock"
+  externalEventId String
+  eventType       String
+  status          WebhookEventStatus
+  message         String? // short machine-readable outcome, e.g. "amount_mismatch"
+  paymentId       String?
+  receivedAt      DateTime           @default(now())
+  processedAt     DateTime?
+
+  @@unique([provider, externalEventId])
+  @@index([paymentId])
+  @@index([receivedAt])
 }
 
 model Payout {
@@ -691,9 +736,9 @@ model ComplianceDocument {
   property   Property?   @relation(fields: [propertyId], references: [id], onDelete: SetNull)
   reviewedBy User?       @relation("ComplianceReviewer", fields: [reviewedById], references: [id])
 
-  @@index([hostId, type])
   /// One current record per requirement per listing (host-level records have propertyId = null).
   @@unique([propertyId, type])
+  @@index([hostId, type])
   @@index([status, submittedAt])
 }
 

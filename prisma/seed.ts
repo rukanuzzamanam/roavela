@@ -230,6 +230,7 @@ async function main() {
           hostCommissionBps: DEFAULT_FEES.hostCommissionBps,
           feeScheduleId: feeSchedule.id,
           confirmedAt: addDays(checkIn, -14),
+          cancellationPolicy: p.cancellation,
           completedAt: checkOut,
           isDemo: true,
         },
@@ -293,12 +294,13 @@ async function main() {
         hostCommissionBps: DEFAULT_FEES.hostCommissionBps,
         feeScheduleId: feeSchedule.id,
         confirmedAt: status === "CONFIRMED" ? now : null,
+        cancellationPolicy: p.cancellation,
         isDemo: true,
       },
     });
   }
   await createUpcoming("pokolbin-vineyard-cottage", "2026-10-16", "2026-10-18", "CONFIRMED");
-  await createUpcoming("blowhole-point-apartment", "2026-10-23", "2026-10-25", "PENDING");
+  await createUpcoming("blowhole-point-apartment", "2026-10-23", "2026-10-25", "CONFIRMED");
   await prisma.blockedDate.create({
     data: {
       propertyId: propertyIds.get("hyams-whitesand-beach-house")!,

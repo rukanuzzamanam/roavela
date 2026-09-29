@@ -10,7 +10,7 @@ import { audit } from "@/server/audit";
 import { prisma } from "@/server/db";
 import { loadEditableProperty, loadOwnedProperty, noteEdit, notFound, ownedWhere, withSection, type HostResult } from "./host-access";
 import { isHostProfileComplete } from "./host-profile";
-import { ACTIVE_BOOKING_STATUSES } from "./search-query";
+import { activeBookingWhere } from "./search-query";
 
 export const MAX_LISTINGS_PER_HOST = 25;
 
@@ -195,7 +195,7 @@ export async function changeListingStatus(
 
   if (intent === "archive") {
     const upcoming = await prisma.booking.count({
-      where: { propertyId: p.id, status: { in: [...ACTIVE_BOOKING_STATUSES] }, checkOut: { gt: new Date() } },
+      where: { propertyId: p.id, ...activeBookingWhere(), checkOut: { gt: new Date() } },
     });
     if (upcoming > 0) return { ok: false, error: "conflict", message: "This listing has upcoming bookings, so it can't be archived yet. Pause it instead." };
   }

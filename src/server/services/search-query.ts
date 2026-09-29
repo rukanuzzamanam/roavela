@@ -10,6 +10,11 @@ import type { SearchParams } from "@/lib/validation/search";
 /** Bookings in these states hold the dates. Must match the DB exclusion constraint. */
 export const ACTIVE_BOOKING_STATUSES = ["PENDING", "CONFIRMED"] as const;
 
+/** Bookings that currently hold inventory: confirmed, or awaiting payment with a live hold. */
+export function activeBookingWhere(now: Date = new Date()): Prisma.BookingWhereInput {
+  return { OR: [{ status: "CONFIRMED" }, { status: "PENDING", expiresAt: { gt: now } }] };
+}
+
 export interface SearchContext {
   originId: string | null;
   includeDemo: boolean;
@@ -25,14 +30,20 @@ export interface StayRange {
  * Conditions a property must meet to be bookable for a date range. Shared by search and the
  * property page so both apply exactly the same availability rules.
  */
-export function stayAvailabilityConditions({ checkIn, checkOut, nights }: StayRange): Prisma.PropertyWhereInput[] {
+export function stayAvailabilityConditions({ checkIn, checkOut, nights }: StayRange, now: Date = new Date()): Prisma.PropertyWhereInput[] {
   return [
     { minNights: { lte: nights } },
     { OR: [{ maxNights: null }, { maxNights: { gte: nights } }] },
-    // Half-open overlap: existing.checkIn < requested.checkOut AND existing.checkOut > requested.checkIn
+    // Half-open overlap: existing.checkIn < requested.checkOut AND existing.checkOut > requested.checkIn.
+    // A PENDING booking only holds the dates while its checkout hold is live; lapsed holds are
+    // ignored here (and marked EXPIRED before any new booking is inserted).
     {
       bookings: {
-        none: { status: { in: [...ACTIVE_BOOKING_STATUSES] }, checkIn: { lt: checkOut }, checkOut: { gt: checkIn } },
+        none: {
+          checkIn: { lt: checkOut },
+          checkOut: { gt: checkIn },
+          ...activeBookingWhere(now),
+        },
       },
     },
     { blockedDates: { none: { startDate: { lt: checkOut }, endDate: { gt: checkIn } } } },

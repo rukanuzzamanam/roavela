@@ -3,6 +3,7 @@ import Link from "next/link";
 import { PropertyCard } from "@/components/property/property-card";
 import { ButtonLink } from "@/components/ui/button";
 import { Badge, Card, EmptyState } from "@/components/ui/feedback";
+import { BOOKING_STATUS_LABELS } from "@/lib/booking-lifecycle";
 import { formatStayDate } from "@/lib/dates";
 import { pluralize } from "@/lib/utils";
 import { parseSearchParams } from "@/lib/validation/search";
@@ -14,7 +15,6 @@ import { searchProperties } from "@/server/services/search";
 export const metadata: Metadata = { title: "Your account", robots: { index: false } };
 
 const ROLE_LABEL = { CUSTOMER: "Traveller", HOST: "Host", ADMIN: "Administrator" } as const;
-const STATUS_LABEL = { PENDING: "Pending", CONFIRMED: "Confirmed", CANCELLED: "Cancelled", COMPLETED: "Completed", REFUNDED: "Refunded" } as const;
 
 export default async function AccountPage() {
   const session = await requirePermission("account:manage", "/account");
@@ -104,7 +104,7 @@ export default async function AccountPage() {
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <Badge tone={t.status === "CONFIRMED" || t.status === "COMPLETED" ? "success" : "neutral"}>{STATUS_LABEL[t.status]}</Badge>
+                  <Badge tone={BOOKING_STATUS_LABELS[t.status].tone}>{BOOKING_STATUS_LABELS[t.status].label}</Badge>
                   {t.isDemo && <Badge tone="demo">Demo data</Badge>}
                 </div>
               </div>

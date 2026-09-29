@@ -37,6 +37,9 @@ function bookingData(checkIn: string, checkOut: string, status: "PENDING" | "CON
     platformRevenueCents: 4_500,
     guestServiceFeeBps: 600,
     hostCommissionBps: 400,
+    // Phase 4: PENDING bookings must carry a live checkout hold (Booking_pending_expiry_check).
+    // Without this, PENDING inserts failed on that check rather than on the overlap constraint.
+    expiresAt: new Date(Date.now() + 20 * 60_000),
   };
 }
 

@@ -67,7 +67,46 @@ export interface NightlyRateInput {
   overrides?: ReadonlyMap<string, Cents>;
 }
 
-export interface StayQuote extends FeeBreakdown {
+/** Version of the money-split rules, stored on every booking's pricing snapshot. */
+export const PRICING_RULES_VERSION = "2026-09.accommodation-fee-base";
+
+export interface StaySplit {
+  /** Accommodation + cleaning, before any Roavela fee. */
+  subtotalCents: Cents;
+  /** Amount Roavela's percentage fees apply to: accommodation only. */
+  feeBaseCents: Cents;
+  guestServiceFeeCents: Cents;
+  /** What the guest pays. */
+  guestTotalCents: Cents;
+  hostCommissionCents: Cents;
+  /** Host gross proceeds: accommodation − host commission + the full cleaning fee. */
+  hostPayoutCents: Cents;
+  /** Guest fee + host commission. GROSS revenue — payment-processing costs are tracked separately; this is not profit. */
+  platformRevenueCents: Cents;
+}
+
+/**
+ * THE money-split rule for a stay (single source of truth — quotes, bookings, host estimates and
+ * the seed all use this):
+ *   - Roavela's guest service fee and host commission are percentages of ACCOMMODATION only.
+ *   - The cleaning fee is passed through to the host in full; no commission is taken on it.
+ *   - guest total = accommodation + cleaning + guest fee = host proceeds + platform revenue.
+ */
+export function splitStayAmounts(accommodationCents: Cents, cleaningFeeCents: Cents, rates: FeeRates): StaySplit {
+  if (!Number.isInteger(cleaningFeeCents) || cleaningFeeCents < 0) throw new RangeError("cleaning fee must be a non-negative integer");
+  const fees = calculateFees(accommodationCents, rates);
+  return {
+    subtotalCents: accommodationCents + cleaningFeeCents,
+    feeBaseCents: accommodationCents,
+    guestServiceFeeCents: fees.guestServiceFeeCents,
+    guestTotalCents: accommodationCents + cleaningFeeCents + fees.guestServiceFeeCents,
+    hostCommissionCents: fees.hostCommissionCents,
+    hostPayoutCents: fees.hostPayoutCents + cleaningFeeCents,
+    platformRevenueCents: fees.platformRevenueCents,
+  };
+}
+
+export interface StayQuote extends StaySplit {
   nights: number;
   nightlyRates: { date: string; cents: Cents }[];
   accommodationCents: Cents;
@@ -88,7 +127,7 @@ export function quoteStay(checkIn: Date, checkOut: Date, pricing: NightlyRateInp
   });
 
   const accommodationCents = nightlyRates.reduce((sum, n) => sum + n.cents, 0);
-  const fees = calculateFees(accommodationCents + pricing.cleaningFeeCents, rates);
+  const split = splitStayAmounts(accommodationCents, pricing.cleaningFeeCents, rates);
 
-  return { nights, nightlyRates, accommodationCents, cleaningFeeCents: pricing.cleaningFeeCents, ...fees };
+  return { nights, nightlyRates, accommodationCents, cleaningFeeCents: pricing.cleaningFeeCents, ...split };
 }
