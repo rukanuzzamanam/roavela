@@ -12,6 +12,7 @@ export async function Navbar() {
   const links: NavLink[] = [{ href: "/search", label: "Find a stay" }];
   if (user && can(user.role, "favourite:manage")) links.push({ href: "/saved", label: "Saved" });
   if (user && can(user.role, "host:portal")) links.push({ href: "/host", label: "Host portal" });
+  else if (!user || can(user.role, "host:become")) links.push({ href: "/host/start", label: "List your property" });
   if (user && can(user.role, "admin:portal")) links.push({ href: "/admin", label: "Admin" });
 
   return (
