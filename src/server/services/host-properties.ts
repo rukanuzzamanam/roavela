@@ -269,10 +269,11 @@ export async function getHostDashboard(userId: string) {
   const [counts, upcoming] = await Promise.all([
     prisma.property.groupBy({ by: ["status"], where: { host: { userId } }, _count: true }),
     prisma.booking.findMany({
-      where: { property: { host: { userId } }, status: { in: ["PENDING", "CONFIRMED"] }, checkIn: { gte: new Date(Date.now() - 86_400_000) } },
+      // Confirmed stays only: an unpaid checkout hold isn't a booking yet.
+      where: { property: { host: { userId } }, status: "CONFIRMED", checkOut: { gt: new Date() } },
       orderBy: { checkIn: "asc" },
       take: 5,
-      select: { id: true, reference: true, status: true, checkIn: true, checkOut: true, adults: true, children: true, isDemo: true, property: { select: { title: true } } },
+      select: { id: true, reference: true, status: true, checkIn: true, checkOut: true, adults: true, children: true, isDemo: true, hostPayoutCents: true, currency: true, property: { select: { title: true } } },
     }),
   ]);
   const byStatus = Object.fromEntries(counts.map((c) => [c.status, c._count])) as Partial<Record<string, number>>;
