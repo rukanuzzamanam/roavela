@@ -132,7 +132,7 @@ export default async function ReservePreviewPage({ params, searchParams }: PageP
           <Card className="overflow-hidden">
             <PropertyImage src={property.images[0]?.url ?? null} alt={property.images[0]?.alt ?? ""} sizes="22rem" className="aspect-[16/9]" />
             <div className="p-5">
-              <p className="text-xs font-bold tracking-wider text-eucalypt-600 uppercase">{property.destination.name}</p>
+              <p className="text-xs font-bold tracking-wider text-eucalypt-600 uppercase">{property.destination?.name}</p>
               <p className="font-display text-xl">{property.title}</p>
               {property.isDemo && (
                 <Badge tone="demo" className="mt-2">

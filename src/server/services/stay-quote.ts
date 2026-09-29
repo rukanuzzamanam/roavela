@@ -15,7 +15,7 @@ export type StayQuoteResult =
 interface QuotableProperty {
   id: string;
   countryCode: string;
-  nightlyPriceCents: number;
+  nightlyPriceCents: number | null;
   weekendPriceCents: number | null;
   cleaningFeeCents: number;
   minNights: number;
@@ -31,6 +31,9 @@ interface QuotableProperty {
  * This is an estimate for display only; nothing is held or booked.
  */
 export async function getStayQuote(property: QuotableProperty, stay: StayRange, guests: number): Promise<StayQuoteResult> {
+  // An unpriced listing (only possible for drafts) can never be quoted.
+  const nightlyPriceCents = property.nightlyPriceCents;
+  if (nightlyPriceCents === null) return { status: "unavailable" };
   if (guests > property.maxGuests) return { status: "too_many_guests", maxGuests: property.maxGuests };
   if (stay.nights < property.minNights) return { status: "min_nights", minNights: property.minNights };
   if (property.maxNights !== null && stay.nights > property.maxNights) return { status: "max_nights", maxNights: property.maxNights };
@@ -48,7 +51,7 @@ export async function getStayQuote(property: QuotableProperty, stay: StayRange, 
   const quote = quoteStay(
     stay.checkIn,
     stay.checkOut,
-    { ...property, overrides: new Map(overrides.map((o) => [toIsoDate(o.date), o.priceCents as number])) },
+    { ...property, nightlyPriceCents, overrides: new Map(overrides.map((o) => [toIsoDate(o.date), o.priceCents as number])) },
     fees,
   );
   return { status: "ok", quote };

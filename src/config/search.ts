@@ -15,6 +15,8 @@ export const PROPERTY_TYPE_LABELS: Record<PropertyType, string> = {
   FAMILY_HOUSE: "Family house",
   VILLA: "Villa",
   GLAMPING: "Glamping",
+  HOUSE: "House",
+  GUESTHOUSE: "Guesthouse",
   OTHER: "Other",
 };
 

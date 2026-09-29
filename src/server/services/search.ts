@@ -7,7 +7,7 @@ import type { SearchParams } from "@/lib/validation/search";
 import { prisma } from "@/server/db";
 import { demoListingsVisible } from "@/server/env";
 import type { MapPoint, OriginOption, PropertyCardData } from "@/types/marketplace";
-import { approximateLocation, resolvePropertyDrive } from "./drive-time";
+import { approximateLocation, locateProperty, resolvePropertyDrive } from "./drive-time";
 import { getActiveFeeSchedule } from "./fees";
 import { buildPropertyWhere, paginate, sortResults, type PageInfo } from "./search-query";
 
@@ -100,15 +100,20 @@ export async function searchProperties(
 
   const feeSchedule = stay && candidates.length > 0 ? await getActiveFeeSchedule("AU") : null;
 
-  let ranked = candidates.map((c) => {
-    const drive = origin ? resolvePropertyDrive(origin, c.destination.estimatesTo?.[0], c.destination, c) : null;
+  // Published listings always have a destination and price (Property_listable_complete_check);
+  // the guard only narrows types and skips anything malformed rather than failing the search.
+  let ranked = candidates.flatMap((c) => {
+    const { destination, nightlyPriceCents } = c;
+    if (!destination || nightlyPriceCents === null) return [];
+    const located = locateProperty(c, destination)!;
+    const drive = origin ? resolvePropertyDrive(origin, destination.estimatesTo?.[0], destination, located.point) : null;
     let stayQuote: PropertyCardData["stay"];
     if (stay && feeSchedule) {
       const overrides = new Map((c.availability ?? []).map((a) => [toIsoDate(a.date), a.priceCents as number]));
-      const quote = quoteStay(stay.checkIn, stay.checkOut, { ...c, overrides }, feeSchedule);
+      const quote = quoteStay(stay.checkIn, stay.checkOut, { ...c, nightlyPriceCents, overrides }, feeSchedule);
       stayQuote = { nights: quote.nights, totalCents: quote.guestTotalCents };
     }
-    return { ...c, drive, stay: stayQuote };
+    return [{ ...c, nightlyPriceCents, point: located.point, drive, stay: stayQuote }];
   });
 
   // Refine the coarse regional drive filter with the per-property estimate.
@@ -124,7 +129,7 @@ export async function searchProperties(
     id: r.id,
     slug: r.slug,
     title: r.title,
-    ...approximateLocation(r),
+    ...approximateLocation(r.point),
     nightlyPriceCents: r.nightlyPriceCents,
     currency: r.currency,
     driveMinutes: r.drive?.durationMinutes ?? null,
@@ -154,7 +159,7 @@ export async function searchProperties(
 
   const results: PropertyCardData[] = pageItems.flatMap((k) => {
     const p = byId.get(k.id);
-    if (!p) return []; // deleted between phases — skip rather than fail
+    if (!p || !p.destination) return []; // changed between phases — skip rather than fail
     const highlights = p.amenities
       .map((a) => AMENITY_BY_KEY.get(a.amenity.key))
       .filter((a): a is NonNullable<typeof a> => Boolean(a?.highlight))
@@ -166,7 +171,7 @@ export async function searchProperties(
         slug: k.slug,
         title: k.title,
         type: p.type,
-        locality: p.locality,
+        locality: p.locality ?? p.destination.name,
         destinationName: p.destination.name,
         destinationSlug: p.destination.slug,
         imageUrl: p.images[0]?.url ?? null,
@@ -180,7 +185,7 @@ export async function searchProperties(
         bathrooms: p.bathrooms,
         highlights,
         drive: k.drive,
-        ...approximateLocation(k),
+        ...approximateLocation(k.point),
         isDemo: p.isDemo,
         isFavourite: (p.favourites?.length ?? 0) > 0,
         stay: k.stay,

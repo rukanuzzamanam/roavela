@@ -30,6 +30,11 @@ enum UserStatus {
   SUSPENDED
 }
 
+enum HostType {
+  INDIVIDUAL
+  BUSINESS
+}
+
 enum HostOnboardingStatus {
   NOT_STARTED
   IN_PROGRESS
@@ -47,14 +52,20 @@ enum PropertyType {
   FAMILY_HOUSE
   VILLA
   GLAMPING
+  HOUSE
+  GUESTHOUSE
   OTHER
 }
 
-/// Only PUBLISHED properties are publicly searchable.
+/// Listing lifecycle. Only PUBLISHED properties are publicly searchable.
+/// "Incomplete" / "ready for review" are computed from the DRAFT's checklist, not stored.
+/// Admin approval publishes a listing (approved ≡ PUBLISHED). Allowed transitions live in
+/// src/lib/listing-lifecycle.ts.
 enum PropertyStatus {
   DRAFT
-  PENDING_REVIEW
-  PUBLISHED
+  PENDING_REVIEW // submitted, awaiting / in admin review
+  CHANGES_REQUESTED // reviewer asked the host for changes
+  PUBLISHED // approved and live
   PAUSED // paused by the host
   REJECTED // rejected at admin review
   SUSPENDED // suspended by an admin
@@ -156,9 +167,11 @@ enum ComplianceDocumentType {
 }
 
 /// "APPROVED" means reviewed by a Roavela admin — it is NOT a claim of legal verification.
+/// "Not submitted" is the absence of a record. Hosts can only ever create SUBMITTED records;
+/// only an admin can move a record to UNDER_REVIEW / APPROVED / REJECTED.
 enum ComplianceStatus {
   SUBMITTED
-  PENDING_REVIEW
+  UNDER_REVIEW
   APPROVED
   REJECTED
   EXPIRED
@@ -189,6 +202,7 @@ model User {
   reviews             Review[]
   favourites          Favourite[]
   adminActions        AdminAction[]         @relation("AdminActionActor")
+  auditLogs           AuditLog[]
   reviewedCompliance  ComplianceDocument[]  @relation("ComplianceReviewer")
   feeSchedulesCreated PlatformFeeSchedule[]
 
@@ -223,13 +237,20 @@ model PasswordResetToken {
   @@index([userId])
 }
 
+/// PUBLIC fields: displayName, bio, avatarUrl.
+/// PRIVATE fields (never rendered on public pages): hostType, legalName, businessName, abn, phone.
 model HostProfile {
   id               String               @id @default(cuid())
   userId           String               @unique
   displayName      String
   bio              String?
-  phone            String?
+  avatarUrl        String?
+  avatarKey        String? // storage key for avatarUrl
+  hostType         HostType             @default(INDIVIDUAL)
+  legalName        String?
   businessName     String?
+  abn              String? // Australian Business Number, optional
+  phone            String?
   onboardingStatus HostOnboardingStatus @default(NOT_STARTED)
 
   // Stripe Connect (populated once the payments phase is enabled).
@@ -305,26 +326,31 @@ model DriveEstimate {
 
 // ───────────────────────────── Properties ─────────────────────────────
 
+/// Hosts build listings section by section, so fields collected after the "basics" step are
+/// nullable while a listing is a DRAFT. A database CHECK constraint (see the phase 3 migration)
+/// requires them for any listing that is submitted, live, paused or suspended.
 model Property {
   id            String         @id @default(cuid())
   slug          String         @unique
   hostId        String
-  destinationId String
+  destinationId String?
   title         String
-  summary       String
-  description   String
+  summary       String?
+  description   String?
   type          PropertyType
   status        PropertyStatus @default(DRAFT)
 
-  // Address (country-agnostic)
-  addressLine1 String
+  // Address (country-agnostic). PRIVATE — never exposed publicly before booking.
+  addressLine1 String?
   addressLine2 String?
-  locality     String
-  adminArea    String?
+  locality     String? // suburb / town (shown publicly)
+  adminArea    String? // state / territory code, e.g. "NSW"
   postcode     String?
   countryCode  String  @db.Char(2)
-  latitude     Float
-  longitude    Float
+  /// Optional precise position (host-entered or geocoded). When absent, public features use the
+  /// destination's centre and label it approximate. Never fabricated.
+  latitude     Float?
+  longitude    Float?
   timezone     String
 
   bedrooms  Int
@@ -334,17 +360,27 @@ model Property {
 
   // Pricing (minor units)
   currency          String @default("AUD") @db.Char(3)
-  nightlyPriceCents Int
+  nightlyPriceCents Int?
   weekendPriceCents Int? // applies to Friday & Saturday nights
   cleaningFeeCents  Int    @default(0)
   minNights         Int    @default(1)
   maxNights         Int?
 
+  // House rules (structured) + free-text additions
   checkInTime        String             @default("15:00")
   checkOutTime       String             @default("10:00")
-  houseRules         String?
+  smokingAllowed     Boolean            @default(false)
+  petsAllowed        Boolean            @default(false)
+  eventsAllowed      Boolean            @default(false)
+  quietHoursStart    String? // "22:00"
+  quietHoursEnd      String? // "07:00"
+  houseRules         String? // additional rules
   cancellationPolicy CancellationPolicy @default(MODERATE)
   instantBook        Boolean            @default(false)
+
+  /// Onboarding sections the host has saved (e.g. "location", "pricing"). Progress display only —
+  /// submission is always validated against the actual data.
+  completedSections String[] @default([])
 
   // Denormalised review aggregates (recomputed when reviews change)
   ratingAverage Float?
@@ -354,12 +390,14 @@ model Property {
   submittedAt     DateTime?
   reviewedAt      DateTime?
   publishedAt     DateTime?
+  /// Latest reviewer feedback shown to the host (reason for REJECTED or CHANGES_REQUESTED).
+  /// Full review history lives in AdminAction.
   rejectionReason String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   host         HostProfile          @relation(fields: [hostId], references: [id], onDelete: Restrict)
-  destination  Destination          @relation(fields: [destinationId], references: [id], onDelete: Restrict)
+  destination  Destination?         @relation(fields: [destinationId], references: [id], onDelete: Restrict)
   images       PropertyImage[]
   amenities    PropertyAmenity[]
   availability Availability[]
@@ -673,4 +711,21 @@ model AdminAction {
 
   @@index([targetType, targetId])
   @@index([adminId, createdAt])
+}
+
+/// Append-only log of significant non-admin actions (e.g. host created/submitted/paused a listing).
+/// Admin decisions are recorded in AdminAction. Never store secrets or document contents here.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  action     String // e.g. "property.created", "property.submitted"
+  targetType String // e.g. "Property", "HostProfile"
+  targetId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  actor User @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([targetType, targetId, createdAt])
+  @@index([actorId, createdAt])
 }

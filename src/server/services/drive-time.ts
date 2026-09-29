@@ -25,6 +25,20 @@ export function resolvePropertyDrive(
 }
 
 /**
+ * Where a property is, for drive-time and map purposes: its own coordinates when the host provided
+ * them (precise), otherwise its destination's centre (approximate). Never invents a position.
+ */
+export function locateProperty(
+  property: { latitude: number | null; longitude: number | null },
+  destination: LatLng | null,
+): { point: LatLng; precise: boolean } | null {
+  if (property.latitude !== null && property.longitude !== null) {
+    return { point: { latitude: property.latitude, longitude: property.longitude }, precise: true };
+  }
+  return destination ? { point: { latitude: destination.latitude, longitude: destination.longitude }, precise: false } : null;
+}
+
+/**
  * Round coordinates for public display (~1 km at Australian latitudes). Exact coordinates are
  * never sent to the browser before booking — they may identify a host's home.
  */
