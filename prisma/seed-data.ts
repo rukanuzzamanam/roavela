@@ -79,6 +79,20 @@ export const DESTINATIONS: DestinationSeed[] = [
     summary: "Clear water, national park and some of the whitest sand in Australia.",
     heroImageUrl: "/demo/scenes/bay.svg",
   },
+  {
+    // Added in Phase 3 so hosts further down the coast have a destination to choose.
+    slug: "south-coast",
+    name: "South Coast",
+    kind: "REGION",
+    parent: "nsw",
+    adminArea: "NSW",
+    latitude: -35.3565, // Ulladulla, approximate regional centre
+    longitude: 150.4724,
+    isPublished: true,
+    tagline: "Quiet beaches, lakes and seaside towns.",
+    summary: "Unhurried coastal towns, surf beaches and national parks south of Jervis Bay.",
+    heroImageUrl: "/demo/scenes/coast.svg",
+  },
 ];
 
 /** Hand-entered approximate estimates from Sydney CBD. Replace with ROUTING_API results later. */
@@ -87,6 +101,7 @@ export const DRIVE_ESTIMATES = [
   { origin: "sydney", destination: "kiama", minutes: 100, km: 120 },
   { origin: "sydney", destination: "hunter-valley", minutes: 130, km: 165 },
   { origin: "sydney", destination: "jervis-bay", minutes: 160, km: 185 },
+  { origin: "sydney", destination: "south-coast", minutes: 185, km: 230 },
 ];
 
 export const HOSTS = [

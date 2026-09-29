@@ -111,7 +111,19 @@ async function main() {
         passwordHash,
         isDemo: true,
         emailVerifiedAt: new Date(),
-        hostProfile: { create: { displayName: h.displayName, bio: h.bio, onboardingStatus: "COMPLETE", isDemo: true } },
+        hostProfile: {
+          create: {
+            displayName: h.displayName,
+            bio: h.bio,
+            onboardingStatus: "COMPLETE",
+            // DEMO placeholders for the private fields so demo hosts can submit new listings.
+            hostType: "BUSINESS",
+            legalName: `${h.name} (demo)`,
+            businessName: `${h.displayName} (demo)`,
+            phone: "0400 000 000",
+            isDemo: true,
+          },
+        },
       },
       include: { hostProfile: true },
     });
