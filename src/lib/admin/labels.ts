@@ -1,0 +1,40 @@
+/** Human-readable labels for audit actions (falls back to the raw action key). */
+const ACTION_LABELS: Record<string, string> = {
+  "property.created": "Listing created",
+  "property.submitted": "Submitted for review",
+  "property.withdrawn": "Withdrawn from review",
+  "property.paused": "Paused by host",
+  "property.resumed": "Resumed by host",
+  "property.archived": "Archived by host",
+  "property.edited_after_review": "Edited after approval",
+  "property.review_started": "Review started",
+  "property.approve": "Approved and published",
+  "property.request_changes": "Changes requested",
+  "property.reject": "Rejected",
+  "property.suspend": "Suspended",
+  "property.reinstate": "Reinstated (paused)",
+  "compliance.submitted": "Compliance information submitted",
+  "compliance.document_attached": "Compliance document attached",
+  "compliance.review_started": "Compliance review started",
+  "compliance.reviewed": "Compliance information reviewed",
+  "compliance.rejected": "Compliance returned for correction",
+  "compliance.expired": "Compliance record marked expired",
+  "compliance.document_viewed": "Compliance document opened by admin",
+  "booking.cancelled": "Cancelled by Roavela",
+  "refund.executed": "Refund executed",
+  "refund.declined": "Refund declined",
+  "host.suspend": "Host account suspended",
+  "host.reactivate": "Host account reactivated",
+  "customer.suspend": "Customer account suspended",
+  "customer.reactivate": "Customer account reactivated",
+  "review.keep": "Review kept",
+  "review.hide": "Review hidden",
+  "review.remove": "Review removed (policy violation)",
+  "review.restore": "Review restored",
+  "destination.updated": "Destination updated",
+  "commission.schedule_created": "Commission schedule created",
+};
+
+export function actionLabel(action: string): string {
+  return ACTION_LABELS[action] ?? action;
+}
