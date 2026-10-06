@@ -1,6 +1,7 @@
 import "server-only";
 import Stripe from "stripe";
 import type { PaymentEvent } from "./events";
+import { normaliseRefundStatus } from "./provider";
 
 /**
  * Verify a Stripe webhook and normalise it. `constructEvent` checks the HMAC signature against
@@ -43,6 +44,23 @@ export function toPaymentEvent(event: Stripe.Event): PaymentEvent {
       const charge = event.data.object;
       const pi = typeof charge.payment_intent === "string" ? charge.payment_intent : (charge.payment_intent?.id ?? null);
       return { ...base, kind: "refunded", providerPaymentId: pi, currency: charge.currency, refundedCents: charge.amount_refunded };
+    }
+    case "refund.created":
+    case "refund.updated":
+    case "refund.failed":
+    case "charge.refund.updated": {
+      // Status of an individual refund (e.g. a pending refund that later succeeds or fails).
+      const refund = event.data.object;
+      const pi = typeof refund.payment_intent === "string" ? refund.payment_intent : (refund.payment_intent?.id ?? null);
+      return {
+        ...base,
+        kind: "refund_status",
+        providerPaymentId: pi,
+        currency: refund.currency,
+        providerRefundId: refund.id,
+        refundStatus: normaliseRefundStatus(refund.status),
+        refundFailureReason: refund.failure_reason ?? null,
+      };
     }
     default:
       return { ...base, kind: "ignored", providerPaymentId: null };

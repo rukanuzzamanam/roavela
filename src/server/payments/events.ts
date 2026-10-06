@@ -8,7 +8,7 @@ import { bookingConfirmedEmail, hostNewBookingEmail, paymentFailedEmail, sendBoo
 import { errorFields, log } from "@/server/log";
 import { track } from "@/server/providers/analytics";
 import { firstName } from "@/lib/validation/booking";
-import { getPaymentProvider } from "./provider";
+import { requestRefund } from "./refunds";
 
 /**
  * THE place where payments change booking state. Verified Stripe webhooks and the development
@@ -23,7 +23,7 @@ import { getPaymentProvider } from "./provider";
  *  - Side effects (emails, analytics, refund requests) run only after the transaction commits,
  *    and only for state changes this event actually caused.
  */
-export type PaymentEventKind = "succeeded" | "failed" | "processing" | "canceled" | "refunded" | "ignored";
+export type PaymentEventKind = "succeeded" | "failed" | "processing" | "canceled" | "refunded" | "refund_status" | "ignored";
 
 export interface PaymentEvent {
   provider: "stripe" | "mock";
@@ -39,6 +39,10 @@ export interface PaymentEvent {
   failureCode?: string | null;
   /** For "refunded": the CUMULATIVE amount refunded on this payment. */
   refundedCents?: number;
+  /** For "refund_status": the provider's refund id and its current status. */
+  providerRefundId?: string | null;
+  refundStatus?: "pending" | "succeeded" | "failed" | "canceled";
+  refundFailureReason?: string | null;
 }
 
 export type ProcessOutcome = "processed" | "duplicate" | "ignored" | "rejected";
@@ -218,6 +222,11 @@ async function apply(tx: Prisma.TransactionClient, ev: PaymentEvent, payment: Lo
         where: { id: payment.id },
         data: { refundedCents, status: refundedCents >= payment.amountCents ? "REFUNDED" : refundedCents > 0 ? "PARTIALLY_REFUNDED" : payment.status },
       });
+      // The provider now reports at least everything in our ledger as refunded: settle in-flight rows.
+      const ledger = await tx.refund.findMany({ where: { paymentId: payment.id, status: { in: ["PENDING", "SUCCEEDED"] } }, select: { amountCents: true } });
+      if (refundedCents >= ledger.reduce((t, r) => t + r.amountCents, 0)) {
+        await tx.refund.updateMany({ where: { paymentId: payment.id, status: "PENDING" }, data: { status: "SUCCEEDED", confirmedAt: now } });
+      }
       if (booking.status === "REFUND_PENDING" && refundedCents >= (booking.refundDueCents ?? 0)) {
         const target = bookingTransition("refund_confirmed", booking.status) as BookingStatus;
         await tx.booking.update({ where: { id: booking.id }, data: { status: target } });
@@ -225,6 +234,22 @@ async function apply(tx: Prisma.TransactionClient, ev: PaymentEvent, payment: Lo
         return "Refund completed";
       }
       return "Refund recorded";
+    }
+
+    case "refund_status": {
+      if (!ev.providerRefundId || !ev.refundStatus) throw new Rejection("Missing refund id");
+      const status = ({ pending: "PENDING", succeeded: "SUCCEEDED", failed: "FAILED", canceled: "CANCELLED" } as const)[ev.refundStatus];
+      // Only rows for THIS payment, and never move a refund backwards out of a final state.
+      const updated = await tx.refund.updateMany({
+        where: { providerRefundId: ev.providerRefundId, paymentId: payment.id, status: { in: status === "PENDING" ? [] : ["PENDING"] } },
+        data: { status, ...(status === "SUCCEEDED" ? { confirmedAt: now } : {}), failureCode: ev.refundFailureReason?.slice(0, 64) ?? null },
+      });
+      if (updated.count === 0) {
+        const known = await tx.refund.count({ where: { providerRefundId: ev.providerRefundId, paymentId: payment.id } });
+        return known ? "Refund status unchanged" : "Refund not in ledger (created outside Roavela)";
+      }
+      if (status === "FAILED") effects.push(async () => log.error("refund.failed_at_provider", { reference: ref, refundId: ev.providerRefundId }));
+      return `Refund ${ev.refundStatus}`;
     }
   }
   return "No change";
@@ -237,41 +262,4 @@ async function datesStillFree(tx: Prisma.TransactionClient, b: { id: string; pro
     tx.blockedDate.count({ where: { propertyId: b.propertyId, startDate: { lt: b.checkOut }, endDate: { gt: b.checkIn } } }),
   ]);
   return bookings === 0 && blocks === 0;
-}
-
-/**
- * Ask the payment provider to refund. The refund is only recorded as complete when the provider
- * reports it (Stripe: charge.refunded webhook; mock: an equivalent synthetic event). If the request
- * fails the booking simply stays REFUND_PENDING and the failure is logged — never faked.
- */
-export async function requestRefund({ paymentId, amountCents, reason, bookingId }: { paymentId: string; amountCents: number; reason: "guest_cancellation" | "late_payment"; bookingId: string }) {
-  const payment = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
-  if (!payment.providerPaymentId || amountCents <= 0) return;
-  const active = getPaymentProvider();
-  if (!active.ok || active.provider.name !== payment.provider) {
-    log.error("refund.provider_unavailable", { paymentId, provider: payment.provider });
-    return;
-  }
-  track({ name: "refund_requested", properties: { bookingId, amountCents, reason } });
-  try {
-    const { refundId } = await active.provider.refund({
-      providerPaymentId: payment.providerPaymentId,
-      amountCents,
-      idempotencyKey: `roavela:payment:${payment.id}:refund:${reason}`,
-    });
-    log.info("refund.requested", { paymentId, amountCents, reason });
-    if (active.provider.name === "mock") {
-      await processPaymentEvent({
-        provider: "mock",
-        eventId: `mock_evt_${refundId}`,
-        eventType: "charge.refunded",
-        kind: "refunded",
-        providerPaymentId: payment.providerPaymentId,
-        currency: payment.currency,
-        refundedCents: Math.min(payment.amountCents, payment.refundedCents + amountCents),
-      });
-    }
-  } catch (e) {
-    log.error("refund.request_failed", { paymentId, reason, ...errorFields(e) });
-  }
 }

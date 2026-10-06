@@ -83,6 +83,8 @@ afterAll(async () => {
   const bookings = await prisma.booking.findMany({ where: { propertyId: { in: [ids.property, ids.unpublished] } }, select: { id: true } });
   const payments = await prisma.payment.findMany({ where: { bookingId: { in: bookings.map((b) => b.id) } }, select: { id: true } });
   await prisma.webhookEvent.deleteMany({ where: { OR: [{ paymentId: { in: payments.map((p) => p.id) } }, { externalEventId: { contains: run } }] } });
+  // Phase 5: refunds are ledgered and reference their payment (ON DELETE RESTRICT), so remove them first.
+  await prisma.refund.deleteMany({ where: { paymentId: { in: payments.map((p) => p.id) } } });
   await prisma.payment.deleteMany({ where: { id: { in: payments.map((p) => p.id) } } });
   await prisma.booking.deleteMany({ where: { id: { in: bookings.map((b) => b.id) } } });
   await prisma.blockedDate.deleteMany({ where: { propertyId: ids.property } });

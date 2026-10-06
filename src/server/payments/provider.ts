@@ -1,5 +1,5 @@
 import "server-only";
-import { randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import Stripe from "stripe";
 import { evaluatePaymentConfig, type PaymentConfig } from "@/lib/payment-config";
 
@@ -16,8 +16,22 @@ export interface PaymentProvider {
   getClientSecret(providerPaymentId: string): Promise<string | null>;
   /** Stop an unpaid payment (e.g. when a checkout hold expires). Best effort. */
   cancelPayment(providerPaymentId: string): Promise<void>;
-  /** Request a refund. The refund is only recorded as complete when the provider confirms it. */
-  refund(input: { providerPaymentId: string; amountCents: number; idempotencyKey: string }): Promise<{ refundId: string }>;
+  /**
+   * Request a refund. The provider's own status for it is returned; booking/payment totals only move
+   * when the provider later reports the refund (charge.refunded). The idempotency key makes a retried
+   * request return the original refund instead of creating a second one.
+   */
+  refund(input: { providerPaymentId: string; amountCents: number; idempotencyKey: string }): Promise<ProviderRefund>;
+}
+
+export interface ProviderRefund {
+  refundId: string;
+  status: "pending" | "succeeded" | "failed" | "canceled";
+  failureReason?: string | null;
+}
+
+export function normaliseRefundStatus(status: string | null | undefined): ProviderRefund["status"] {
+  return status === "succeeded" || status === "failed" || status === "canceled" ? status : "pending"; // incl. requires_action
 }
 
 export class StripePaymentProvider implements PaymentProvider {
@@ -56,7 +70,7 @@ export class StripePaymentProvider implements PaymentProvider {
 
   async refund({ providerPaymentId, amountCents, idempotencyKey }: Parameters<PaymentProvider["refund"]>[0]) {
     const refund = await this.client.refunds.create({ payment_intent: providerPaymentId, amount: amountCents }, { idempotencyKey });
-    return { refundId: refund.id };
+    return { refundId: refund.id, status: normaliseRefundStatus(refund.status), failureReason: refund.failure_reason ?? null };
   }
 }
 
@@ -75,8 +89,9 @@ export class MockPaymentProvider implements PaymentProvider {
     return `${providerPaymentId}_secret_mock`;
   }
   async cancelPayment() {}
-  async refund() {
-    return { refundId: `mock_re_${randomBytes(8).toString("hex")}` };
+  async refund({ idempotencyKey }: Parameters<PaymentProvider["refund"]>[0]): Promise<ProviderRefund> {
+    // Deterministic per idempotency key, mirroring Stripe: a retried request returns the same refund.
+    return { refundId: `mock_re_${createHash("sha256").update(idempotencyKey).digest("hex").slice(0, 24)}`, status: "succeeded" };
   }
 }
 
