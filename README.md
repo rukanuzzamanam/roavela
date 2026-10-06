@@ -4,13 +4,117 @@
 
 Roavela is an Australian travel marketplace built around one idea: discover stays and weekend escapes by **how far you want to drive**. It starts with Sydney as the primary origin (Blue Mountains, Hunter Valley, Kiama, Jervis Bay…), but nothing in the architecture is tied to Sydney, NSW or Australia.
 
-> **Status: Phase 4 (booking engine, checkout & Stripe test payments).**
+> **Status: Phase 5 (admin operations, marketplace control & financial oversight).**
 >
-> - **Travellers** can search, view stays, save stays and manage their account (Phase 2), and now **book and pay** — in Stripe **test mode** (Phase 4).
+> - **Travellers** can search, view stays, save stays and manage their account (Phase 2), and **book and pay** — in Stripe **test mode** (Phase 4).
 > - **Property owners and managers** can become hosts, build listings, set pricing and availability, submit for review (Phase 3), and see their bookings and estimated proceeds (Phase 4).
+> - **Admins** run the marketplace from `/admin`: listing and compliance review, bookings, payments, reconciliation, TEST refunds, host/customer suspension, review moderation, destinations, commission schedules and an append-only audit log (Phase 5).
 > - **Submitted listings are not public until an admin approves them.**
 > - **LIVE PAYMENTS ARE NOT ENABLED.** Stripe runs in test mode only and live keys are refused. No host payouts are made.
-> - **Not available yet:** live payments, host payouts, the admin review UI. See [Roadmap](#roadmap).
+> - **Not available yet:** live payments, host payouts. See [Roadmap](#roadmap).
+
+## Phase 5 at a glance — admin operations
+
+> **TEST MODE ONLY.** Admin refunds run against Stripe test mode (or the development simulator). Host proceeds are estimates; no money is transferred to hosts.
+
+| Route | What it does |
+|---|---|
+| `/admin` | Overview: attention queue, marketplace counts, bookings & revenue for a date range (7/30 days, this/previous month, custom) with the formulas shown on the page |
+| `/admin/properties`, `/admin/properties/[id]` | Review queue (pending, under review, changes requested, published, paused, suspended, rejected, archived, draft) and the full review page: details, photos, pricing, availability, rules, public vs private location, compliance, host, history, internal notes, decisions |
+| `/admin/compliance` | Compliance queue: awaiting review, under review, reviewed, needs correction, expired, expiring in 30 days; search by STRA number, title, host or jurisdiction |
+| `/admin/bookings`, `/admin/bookings/[reference]` | Search/filter bookings; detail with timeline, price & commission snapshot, reconciliation checks, Stripe TEST ids, refund ledger, admin cancellation and refunds |
+| `/admin/payments`, `/admin/payments/reconciliation` | Payment records; per-booking reconciliation for a date range with a "flagged only" view |
+| `/admin/refunds` | Refunds needing action (owed, failed or pending) and the full refund ledger |
+| `/admin/hosts`, `/admin/hosts/[id]` | Hosts with listing/booking/compliance counts; detail with "needs review" signals, suspend/reactivate, notes |
+| `/admin/customers`, `/admin/customers/[id]` | Customers with booking counts; detail with bookings, cancellations, reviews, suspend/reactivate, notes |
+| `/admin/reviews` | Moderation: keep, hide, remove (policy violation), restore |
+| `/admin/destinations`, `/admin/destinations/[id]` | Destination editorial/SEO metadata and publish toggle |
+| `/admin/commission` | Versioned fee schedules and scheduling a change |
+| `/admin/audit` | Admin decisions and host/customer activity, filterable |
+| `/admin/settings` | Read-only operational configuration (modes only, never secret values) |
+
+### Admin architecture & authorisation
+
+- **One table of capabilities** (`src/lib/permissions.ts`): `admin:portal`, `admin:properties:moderate`, `admin:compliance:review`, `admin:bookings:view|manage`, `admin:finance:view`, `admin:refunds:manage`, `admin:commission:manage`, `admin:users:manage`, `admin:reviews:moderate`, `admin:destinations:manage`, `admin:audit:view`, `admin:notes:manage`, `admin:config:manage`. Today all belong to `ADMIN`; a future `SUPPORT`, `COMPLIANCE_REVIEWER` or `FINANCE_ADMIN` role is added by listing it against the capabilities it needs — no call sites change.
+- **Two entry points only** (`src/server/auth/admin-guard.ts`): `requireAdmin(capability)` for pages (signed-out → login, wrong role → 403) and `gateAdminAction(capability, limit)` for Server Actions (authorise + per-admin rate limit). The `/admin` layout checks too, but it is not the boundary: **every page and action checks its own capability**, and every service re-checks it again.
+- **The role always comes from the database** for the current session. Suspended accounts have no session user at all. A `role`, `status`, `hostId` or amount in a form, URL or cookie is never read.
+- **Services** live in `src/server/services/admin/*`; pure rules (transitions, refund limits, reconciliation, commission validation, ranges, compliance flags, moderation) in `src/lib/admin/*` with unit tests.
+
+### Property review workflow
+
+Statuses are reused from Phase 3 — no duplicates. `PENDING_REVIEW` is "submitted"; it shows as **under review** once an admin presses *Start review* (`reviewStartedAt/By`). Approval publishes directly (**approved ≡ `PUBLISHED`**), so there is no approved-but-hidden state.
+
+```
+PENDING_REVIEW ──approve──▶ PUBLISHED          (admin confirms they reviewed details + compliance)
+               ──request changes──▶ CHANGES_REQUESTED ──host resubmits──▶ PENDING_REVIEW
+               ──reject──▶ REJECTED            (kept, never deleted)
+PUBLISHED/PAUSED ──suspend──▶ SUSPENDED ──reinstate──▶ PAUSED   (host resumes when ready)
+```
+
+- Request changes / reject require a **category** and a **host-facing message** (shown on the host's listing page as "Reviewer notes" and emailed). An optional **internal note** goes to `AdminNote` and is never shown to the host.
+- `DRAFT`, `CHANGES_REQUESTED`, `REJECTED`, `SUSPENDED` and `ARCHIVED` can never be approved; a suspended host's listings can't be approved or reinstated.
+- **Concurrency:** every decision form carries the record's `updatedAt` as a version and the update is conditional on it. A stale page gets "This listing was already updated by another administrator" instead of overwriting a newer decision.
+
+### Compliance review
+
+Per record (STRA registration, insurance, authority to list, local rules & strata acknowledgement): *Start review* → *Mark information reviewed* / *Needs correction* (host-facing note required) / *Mark expired* (only once its recorded expiry has passed). The wording is deliberately "**Compliance information reviewed**" — Roavela does not verify registrations with government registers and never certifies a listing as legally compliant.
+
+Flags are **jurisdiction-aware** (`src/lib/admin/compliance.ts`): expired / expiring within 30 days only where the host recorded an expiry; "registration number missing" only where the jurisdiction requires one (NSW) and no exemption was declared; unconfirmed insurance/authority; missing requirements. Hosts see each record's status and the reviewer's note on their compliance page.
+
+**Documents** stay in private storage with no public URL. The download route (`/host/compliance/[id]/file`) serves them only to the owning host or an admin with `admin:compliance:review`; everyone else gets the same 404. Responses are `no-store`, `noindex` and sandboxed; downloads are rate-limited and admin reads are audited (`compliance.document_viewed`). Local storage can't sign URLs, so access is authorised per request instead.
+
+### Booking operations, payment oversight & reconciliation
+
+Admins can search bookings by reference, customer, host, property or payment id and filter by booking status, payment status and check-in dates. The booking page shows the timeline (hold, verified payment, cancellation, webhook outcomes, refunds, admin actions), the **immutable price and commission snapshot**, Stripe TEST identifiers (never secrets or card data) and the refund ledger.
+
+**Reconciliation** (`src/lib/admin/reconciliation.ts`) re-derives every figure from the booking's own snapshot and checks: guest total = accommodation + cleaning + guest fee; nightly rates sum to accommodation; guest fee and commission = snapshot rates applied to accommodation; snapshot rates match the booking; platform revenue = guest fee + commission; host proceeds = accommodation − commission + cleaning; total = proceeds + platform revenue; captured payment = guest total; currency matches everywhere; refunds ≤ amount paid; a "refunded" booking really was refunded. Problems are **flagged for investigation, never repaired**. Processing fees are shown only if the provider reported them — they are never estimated — so "net platform amount" usually reads "not calculable".
+
+### Refund workflow
+
+`executeRefund` (`src/server/payments/refunds.ts`) is the single refund path for guest cancellations, late payments and admins:
+
+1. **Preview** on the booking page: amount paid, previously refunded, in flight, maximum refundable, policy refund still owed.
+2. **Confirm** (two-step form, reason required). Each page render issues a one-time **request key**.
+3. **Server execution:** under a `SELECT … FOR UPDATE` lock on the Payment, the key is checked against the ledger (`Refund.idempotencyKey` is UNIQUE) and the amount against *paid − confirmed refunds − refunds in flight* (for policy refunds: *refund due − already refunded*). A `Refund` row is reserved as `PENDING`.
+4. **Provider:** the refund is sent with an idempotency key derived from the request key.
+5. **Database:** the row takes the provider's status (`SUCCEEDED`/`PENDING`/`FAILED`). The booking moves `REFUND_PENDING → REFUNDED` and `Payment.refundedCents` changes **only** when the provider reports the refund (`charge.refunded`; `refund.*` events update ledger rows).
+
+Repeated clicks, retries and replays return the original refund. A provider failure leaves the booking and payment unchanged ("Refund could not be completed. No booking or payment status was changed.") and the booking appears in the refund queue. Amounts are integer cents parsed without floats. *Decline* records a decision without moving money (not allowed where a policy refund is owed). **Admin cancellation** of a confirmed booking goes through the normal lifecycle with a full, policy or no refund — never an arbitrary state change.
+
+### Commission management
+
+Fee schedules are append-only versions. A change creates a new global schedule with an effective date (today = immediately; later dates = Sydney midnight; never in the past; at most a year ahead), within configured bounds (guest service fee 0–20%, host commission 0–25%), with a reason and an explicit confirmation, written together with its audit record. **Every booking keeps the rates and schedule id snapshotted at booking time**, so changes never alter historical economics. Country-specific schedules (if any) take precedence over the global one.
+
+### Account suspension
+
+- **Customer:** signed out everywhere and can't log in, so can't book. Bookings, payments and reviews are kept.
+- **Host:** signed out; every `PUBLISHED`/`PAUSED` listing becomes `SUSPENDED` (hidden, unbookable); listings in review can't be approved. **Confirmed bookings are not cancelled or refunded automatically** — they are flagged ("upcoming bookings with suspended hosts need handling") for an explicit admin cancellation/refund.
+- **Reactivation** restores the account; listings suspended by the host suspension return as `PAUSED` (the host chooses when to go live). Listings suspended individually stay suspended.
+- A reason and confirmation are required; admins can't suspend themselves or other admins; nothing is deleted.
+
+### Reviews & destinations
+
+Moderation changes visibility only (keep, hide, remove, restore) with an internal reason; text and ratings are never edited, admins can't create reviews, and public rating aggregates are recomputed from `PUBLISHED` reviews. Only guests with a completed booking can review (one per booking, unique in the database). Destination editing covers editorial/SEO fields, coordinates and publishing; slugs and hierarchy are structural and read-only.
+
+### Audit log & internal notes
+
+`AdminAction` (admin decisions: actor, action, target, reason, safe metadata) and `AuditLog` (host/customer activity) are **append-only**: no code path updates or deletes them (enforced by a unit test), and a **database trigger rejects any UPDATE**, also on `AdminNote`. High-impact changes and their audit row are written in the same transaction. `AdminNote` is internal-only and never selected by host, customer or public queries; host- and customer-facing text lives separately (`Property.rejectionReason`, `ComplianceDocument.reviewNote`, emails).
+
+### Dashboard metric definitions
+
+Cohort: bookings **confirmed (paid) within the range**, by `confirmedAt`, whatever their status now. Demo (seeded) bookings are excluded. Amounts are AUD; other currencies are counted but never added to AUD totals.
+
+| Metric | Formula |
+|---|---|
+| Confirmed bookings | cohort size |
+| Gross booking value (GBV) | Σ guest totals of the cohort, before refunds |
+| Platform gross revenue | Σ (guest service fee + host commission) of the cohort − that revenue on bookings refunded **in full**. Partial refunds aren't split between host and platform yet. **Not profit**: processing fees and costs aren't deducted. |
+| Refunds confirmed | Σ refunds created in the range that the provider confirmed |
+| Cancelled bookings / rate | cohort bookings now `CANCELLED`, `REFUND_PENDING` or `REFUNDED` ÷ cohort size |
+| Average booking value | GBV ÷ AUD cohort size |
+| Active hosts | ACTIVE host accounts with at least one `PUBLISHED` listing |
+
+The attention queue counts (listings awaiting review, compliance to review, expired/expiring compliance on active listings, refunds awaiting confirmation, failed refunds, upcoming bookings of suspended hosts, failed payments in 7 days) are simple database counts labelled "needs review" — never accusations.
 
 ## Phase 4 at a glance — booking & payments
 
@@ -349,6 +453,8 @@ Optional:
 | `PAYMENT_PROVIDER` | `auto` (default), `stripe` or `mock`. Without a secret key, development uses the simulated provider; production refuses it |
 | `CRON_SECRET` | Bearer secret for `/api/cron/release-holds` (the route is disabled when unset) |
 
+Phase 5 adds **no** environment variables: the admin area reuses the database, session, payment (test-mode) and email configuration above. `.env.example` is unchanged.
+
 Cloudinary and AI variables are placeholders for later phases. Nothing breaks when they are empty.
 
 ### Demo accounts
@@ -425,6 +531,27 @@ The seed creates `admin@demo.roavela.test`, `host@demo.roavela.test` and `guest@
   - **IDOR:** another customer can't view, pay, simulate or cancel; another host can't see the booking; hosts see the first name only and never see unpaid holds
   - the webhook route: unsigned, wrong-secret and tampered requests (400), a verified success, a redelivery (duplicate), a wrong amount, a missing reference, livemode events, failures, and no stored payloads
 
+- **Phase 5 unit** (`tests/unit/phase5.test.ts`):
+  - every admin capability is ADMIN-only; unknown/client-sent role strings grant nothing
+  - listing transitions: no route to `PUBLISHED` except approval from review (or a host resuming an approved, paused listing); suspension/reinstatement admin-only
+  - compliance transitions and jurisdiction-aware expiry/registration flags; moderation transitions
+  - refund limits: paid − confirmed − in flight, conservative in-flight counting, zero/negative/fractional/over-limit rejected, policy refund owed; integer-cent parsing
+  - reconciliation: a correct booking passes; guest total, fee, commission, proceeds, snapshot, nightly-rate, currency, over-refund, ledger and refund-state problems flagged; no processing fee invented
+  - commission: percent → bps without floats, bounds, confirmation, no back-dating, schedule state
+  - reporting ranges across DST and invalid custom ranges; admin query-parameter validation
+  - audit immutability: no source file updates or deletes `AdminAction`, `AuditLog` or `AdminNote`
+- **Phase 5 integration & security** (`tests/integration/admin-operations.test.ts`, real sessions — the role is re-read from the database):
+  - signed-out, customer, host and **suspended ADMIN** sessions are denied; customers and hosts calling every admin action (approve, start review, refund, cancel, commission, suspend, notes, compliance, moderation) with `role=ADMIN`/`status=PUBLISHED` in the request are rejected with no state change; services re-check too
+  - review flow: queue → start review → request changes (host sees the message, never the internal note) → resubmit → approval requires the compliance acknowledgement; reject keeps the listing; invalid routes to `PUBLISHED` blocked
+  - a **stale page** can't overwrite a newer decision; two concurrent decisions → exactly one wins
+  - compliance review with versions, required notes and expiry; **document IDOR**: signed-out, other host and customer get 404, owner and admin 200 (`no-store`, `noindex`), admin reads audited
+  - refunds: manipulated amounts rejected; **duplicate and concurrent duplicate submissions → one refund**; three concurrent full refunds → one succeeds; never more than paid; a provider failure changes nothing and queues the booking; **two admins retrying an owed refund at once → one refund**; **a live Stripe key → refused, nothing recorded**; admin cancellation via the lifecycle
+  - reconciliation flags tampered commission and currency without repairing them; booking search; dashboard GBV/platform revenue deltas match a real booking
+  - commission bounds, back-dating and confirmation; a new schedule prices new bookings while **existing bookings keep their snapshot** and still reconcile
+  - host suspension (sessions revoked, listings suspended, bookings kept, new bookings and approvals blocked, reactivation restores as paused); customer suspension blocks booking; no self/admin suspension
+  - moderation changes visibility only and recomputes aggregates; no second review per booking
+  - notes are admin-only; **UPDATE on audit rows and notes is rejected by the database**; server-side pagination
+
 Run `npm run test:integration` with the database running. With `prisma dev`, integration tests use a single pooled connection (see `vitest.integration.config.mts`), because that local server garbles concurrent connections. The concurrency tests still race at the application level and the database constraint decides. Against a real PostgreSQL, set `TEST_DATABASE_POOL_MAX` to also race parallel sessions. Tests create and delete their own data and don't depend on the seed.
 
 ## Stripe test setup
@@ -446,7 +573,7 @@ To use real Stripe test mode:
 | Insufficient funds | `4000 0000 0000 9995` | As above, with the failure code recorded |
 | 3-D Secure | `4000 0025 0000 3155` | An authentication modal, then success |
 
-Use any future expiry date, any CVC and any postcode. Webhook events handled: `payment_intent.succeeded`, `payment_intent.payment_failed`, `payment_intent.processing`, `payment_intent.canceled` and `charge.refunded`; others are recorded as ignored. Card data never reaches Roavela: it is entered in Stripe's iframe, and Roavela stores only PaymentIntent ids, amounts, statuses and decline codes.
+Use any future expiry date, any CVC and any postcode. Webhook events handled: `payment_intent.succeeded`, `payment_intent.payment_failed`, `payment_intent.processing`, `payment_intent.canceled`, `charge.refunded`, and (Phase 5) `refund.created`, `refund.updated`, `refund.failed` and `charge.refund.updated` for refund-ledger status; others are recorded as ignored. Include the refund events if you filter `stripe listen --events`. Card data never reaches Roavela: it is entered in Stripe's iframe, and Roavela stores only PaymentIntent ids, amounts, statuses and decline codes.
 
 ## Deployment
 
@@ -463,11 +590,13 @@ Use any future expiry date, any CVC and any postcode. Webhook events handled: `p
 - **Authorisation:** capability checks (`src/lib/permissions.ts`) enforced server-side in every protected page and Server Action (`requirePermission` / `authorize`). Non-authorised roles get a real 403.
 - **CSRF:** Server Actions are POST-only and Next.js verifies the `Origin` header against `Host`. The session cookie is `SameSite=Lax`.
 - **Validation:** Zod on all inputs. URL search params degrade safely, and redirect targets are restricted to same-origin paths.
+- **Admin (Phase 5):** see [Admin architecture & authorisation](#admin-architecture--authorisation). Every high-impact action needs a two-step confirmation and a reason, is version-checked against concurrent edits, and is written in one transaction with its audit record. Admin pages are `noindex` and dynamic (never cached).
 - **Rate limiting:** a pluggable limiter covers:
   - sign-in (per IP and per email)
   - sign-up (per IP)
   - password-reset requests (per IP, plus a silent per-email limit) and submissions
   - profile updates and favourites (per user)
+  - admin mutations, refunds and commission changes (per admin), and compliance-document downloads (per user)
 - **Payments:**
   - Stripe test mode only: live keys are refused, `STRIPE_MODE` must be `test`, and livemode webhook events are rejected.
   - Webhooks are signature-verified with replay protection, and a browser redirect never confirms a booking.
@@ -482,12 +611,28 @@ Use any future expiry date, any CVC and any postcode. Webhook events handled: `p
 - **Errors:** users see generic messages; server logs never include secrets or values from failed env validation.
 - **Privacy:** exact property addresses are not exposed publicly, and reviewer names are shortened.
 
+## Known limitations (Phase 5)
+
+- **TEST MODE only**, no payouts. Admin refunds use the same test-mode provider; real Stripe refunds are not exercised by the automated tests (the simulator covers the pipeline).
+- **Partial refunds aren't allocated** between host proceeds and platform revenue; the dashboard reverses platform revenue only for full refunds and reports refunds separately. Processing fees aren't recorded yet, so net platform figures are "not calculable".
+- **Charts** were optional and aren't included; the dashboard focuses on operational figures and queues.
+- **Search** uses indexed exact/prefix matches plus case-insensitive `contains` on a few text columns; there's no full-text or trigram index yet. Admin page loads aren't rate-limited (actions are).
+- **Single admin role.** Capabilities are granular, but only `ADMIN` exists and there's no admin-user management screen (create admins with the seed or directly in the database).
+- **Suspended customers** can't log in at all, so they can't view their bookings or contact support through the app; a live checkout hold (≤ 20 minutes) isn't cancelled on suspension.
+- **Reviews:** there's still no guest review form or "report review" flow, so the moderation queue only contains reviews that already exist (seed data).
+- **Destinations** can be edited and (un)published but not created or re-parented from the UI.
+- **Commission** management covers the global schedule only; country-specific schedules are shown and take precedence but can't be created from the UI.
+- **Compliance documents** are authorised per request on local storage; signed short-lived URLs will come with a cloud storage adapter.
+- **Mobile layout** of the admin tables was verified at desktop width in a browser and by design (cards below `md`); check it on a real phone.
+- **In-memory rate limiter** (see Deployment) and no CSP yet — both on the hardening roadmap.
+- **Dev server:** after `prisma generate` (e.g. pulling this branch), restart `npm run dev` — the development Prisma client is cached across hot reloads.
+
 ## Known limitations (Phase 4)
 
 - **LIVE PAYMENTS ARE NOT ENABLED**, and there are **no host payouts**. Stripe Connect is modelled but hosts aren't onboarded.
 - **Real Stripe test mode is not exercised by the automated tests**, because no keys are available to them. Webhook verification and event handling are tested with locally signed Stripe-format events, and the PaymentIntent and refund calls use the SDK as documented. Follow [Stripe test setup](#stripe-test-setup) with your own test keys to exercise the full round trip.
-- **Refunds** through Stripe are requested and then completed by the `charge.refunded` webhook; the simulated provider covers this path in tests. A refund that fails stays `REFUND_PENDING` and needs manual follow-up (there's no admin UI yet).
-- **Guest cancellation only.** Hosts can't cancel, admins have no booking tools yet, and stays aren't automatically marked `COMPLETED`.
+- **Refunds** through Stripe are requested and then completed by the `charge.refunded` webhook; the simulated provider covers this path in tests. A refund that fails stays `REFUND_PENDING` and appears in the Phase 5 admin refund queue for a retry.
+- **Guest cancellation** (plus admin cancellation from Phase 5). Hosts can't cancel, and stays aren't automatically marked `COMPLETED`.
 - **Holds** last 20 minutes. Stale PaymentIntents are cancelled only when the cron route runs.
 - **Single currency (AUD).** There's no GST or tax calculation, and no invoices or receipts beyond the confirmation email.
 - **Host guest data** is intentionally minimal (first name and party size), and there's no messaging.
@@ -495,7 +640,7 @@ Use any future expiry date, any CVC and any postcode. Webhook events handled: `p
 
 ## Known limitations (Phase 3)
 
-- **Admin review UI:** there is no screen yet (Phase 5). Listings can be approved through `reviewListing()`, for example from a script or test, but not from a page.
+- **Admin review UI:** delivered in Phase 5 (`/admin/properties`).
 - **Local storage only:** only the local-disk storage adapter exists, so production needs a Cloudinary or S3 adapter first.
 - **Image processing:** images aren't resized or re-encoded; they're validated and have their metadata stripped. Image dimensions aren't recorded.
 - **Location:**
@@ -533,7 +678,7 @@ Use any future expiry date, any CVC and any postcode. Webhook events handled: `p
 2. ✅ **Phase 2** — customer marketplace: search, filters, pagination, property page, booking preview, favourites, account, password reset, map/routing abstractions
 3. ✅ **Phase 3** — host onboarding, listing drafts, photos, pricing, availability, house rules, jurisdiction-aware compliance, preview, submission lifecycle, admin review foundation
 4. ✅ **Phase 4** — booking engine, checkout, Stripe **test-mode** payments, webhooks, cancellation and refunds, customer and host booking pages
-5. Admin portal (moderation, suspensions, compliance review, fee configuration, audit log UI)
+5. ✅ **Phase 5** — admin operations: listing and compliance review, booking/payment oversight, reconciliation, idempotent TEST refunds, suspensions, moderation, destinations, commission schedules, audit log
 6. Road-trip discovery (`/explore`), destination SEO pages, sitemap, robots.txt, structured data
 7. AI trip planner (provider interface + mock)
 8. Live payments, Stripe Connect onboarding and payouts (after a separate review)
