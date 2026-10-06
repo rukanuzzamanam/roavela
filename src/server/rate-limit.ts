@@ -70,6 +70,12 @@ export const RATE_LIMITS = {
   bookingCancel: { limit: 10, windowMs: 60 * 60_000 },
   // Per source IP. Stripe retries with backoff, so a generous cap only stops floods.
   webhook: { limit: 600, windowMs: 60_000 },
+  // Admin operations (Phase 5), per admin. Generous for a working day, tight enough to stop scripts.
+  adminMutation: { limit: 300, windowMs: 60 * 60_000 },
+  adminRefund: { limit: 30, windowMs: 60 * 60_000 },
+  adminCommission: { limit: 10, windowMs: 60 * 60_000 },
+  /** Private compliance-document downloads, per user. */
+  documentAccess: { limit: 120, windowMs: 60 * 60_000 },
 } as const satisfies Record<string, RateLimitRule>;
 
 const globalForLimiter = globalThis as unknown as { rateLimiter?: RateLimiter };

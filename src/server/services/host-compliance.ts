@@ -1,7 +1,8 @@
 import "server-only";
 import type { z } from "zod";
 import { jurisdictionFor } from "@/config/jurisdictions";
-import type { ComplianceDocumentType, Prisma } from "@/generated/prisma/client";
+import type { ComplianceDocumentType, Prisma, Role } from "@/generated/prisma/client";
+import { can } from "@/lib/permissions";
 import { todayInTimeZone } from "@/lib/dates";
 import { detectDocumentType, MAX_DOCUMENT_BYTES } from "@/lib/image-files";
 import type { complianceSchema } from "@/lib/validation/host";
@@ -106,10 +107,14 @@ export async function attachComplianceFile(userId: string, propertyId: string, t
   return { ok: true, value: undefined };
 }
 
-/** Private document download: the owning host, or an admin. */
-export async function readComplianceFile(user: { id: string; role: string }, documentId: string) {
+/**
+ * Private document download: the owning host, or an admin with the compliance-review capability.
+ * Anyone else (other hosts, customers) gets null — indistinguishable from a missing document.
+ */
+export async function readComplianceFile(user: { id: string; role: Role }, documentId: string) {
+  if (typeof documentId !== "string" || documentId.length > 64) return null;
   const doc = await prisma.complianceDocument.findFirst({
-    where: user.role === "ADMIN" ? { id: documentId } : { id: documentId, host: { userId: user.id } },
+    where: can(user.role, "admin:compliance:review") ? { id: documentId } : { id: documentId, host: { userId: user.id } },
     select: { fileKey: true },
   });
   if (!doc?.fileKey) return null;

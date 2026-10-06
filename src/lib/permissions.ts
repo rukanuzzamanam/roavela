@@ -17,14 +17,26 @@ export const PERMISSIONS = {
   "host:portal": ["HOST"],
   "property:create": ["HOST"],
   "property:manage": ["HOST"],
+  // Admin capabilities. Granular on purpose: a future SUPPORT, COMPLIANCE_REVIEWER or FINANCE_ADMIN
+  // role is added by listing it against the capabilities it needs — no call sites change.
   "admin:portal": ["ADMIN"],
   "admin:properties:moderate": ["ADMIN"],
   "admin:users:manage": ["ADMIN"],
   "admin:compliance:review": ["ADMIN"],
   "admin:config:manage": ["ADMIN"],
+  "admin:bookings:view": ["ADMIN"],
+  "admin:bookings:manage": ["ADMIN"],
+  "admin:finance:view": ["ADMIN"],
+  "admin:refunds:manage": ["ADMIN"],
+  "admin:commission:manage": ["ADMIN"],
+  "admin:reviews:moderate": ["ADMIN"],
+  "admin:destinations:manage": ["ADMIN"],
+  "admin:audit:view": ["ADMIN"],
+  "admin:notes:manage": ["ADMIN"],
 } as const satisfies Record<string, readonly Role[]>;
 
 export type Permission = keyof typeof PERMISSIONS;
+export type AdminPermission = Extract<Permission, `admin:${string}`>;
 
 export function can(role: Role | null | undefined, permission: Permission): boolean {
   if (!role) return false;
