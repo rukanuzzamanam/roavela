@@ -112,6 +112,7 @@ export async function getAdminHost(userId: string) {
           legalName: true,
           businessName: true,
           abn: true,
+          phone: true,
           onboardingStatus: true,
           payoutsEnabled: true,
           properties: { orderBy: { updatedAt: "desc" }, take: 100, select: { id: true, title: true, status: true, isDemo: true, updatedAt: true } },

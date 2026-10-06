@@ -80,24 +80,6 @@ export async function getDashboardMetrics(range: DateRange): Promise<DashboardMe
   };
 }
 
-/** Daily confirmed bookings and GBV for the range (one grouped query; empty days included). */
-export async function getDailySeries(range: DateRange) {
-  const rows = await prisma.$queryRaw<{ day: string; bookings: bigint; gbv: bigint }[]>`
-    SELECT to_char(("confirmedAt" AT TIME ZONE 'UTC') AT TIME ZONE ${ADMIN_TIMEZONE}, 'YYYY-MM-DD') AS day,
-           COUNT(*)::bigint AS bookings, SUM("totalCents")::bigint AS gbv
-    FROM "Booking"
-    WHERE "isDemo" = false AND "currency" = 'AUD' AND "status"::text IN ('CONFIRMED','COMPLETED','CANCELLED','REFUND_PENDING','REFUNDED')
-      AND "confirmedAt" >= ${range.from} AND "confirmedAt" < ${range.to}
-    GROUP BY 1 ORDER BY 1`;
-  const byDay = new Map(rows.map((r) => [r.day, { bookings: Number(r.bookings), gbvCents: Number(r.gbv) }]));
-  const out: { day: string; bookings: number; gbvCents: number }[] = [];
-  for (let d = new Date(`${range.firstDay}T00:00:00Z`); d <= new Date(`${range.lastDay}T00:00:00Z`); d = addDays(d, 1)) {
-    const day = d.toISOString().slice(0, 10);
-    out.push({ day, ...(byDay.get(day) ?? { bookings: 0, gbvCents: 0 }) });
-  }
-  return out;
-}
-
 export interface AttentionItem {
   key: string;
   count: number;

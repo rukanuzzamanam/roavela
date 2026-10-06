@@ -1,6 +1,7 @@
 import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import type { ReviewStatus } from "@/generated/prisma/enums";
+import { isModerationDecision, moderationTransition } from "@/lib/admin/moderation";
 import { ADMIN_PAGE_SIZE } from "@/lib/admin/query";
 import { prisma } from "@/server/db";
 import { cleanText, FORBIDDEN, fail, MIN_REASON, ok, permitted, recordAdminAction, STALE, type AdminActor, type AdminResult } from "./common";
@@ -11,19 +12,6 @@ import { cleanText, FORBIDDEN, fail, MIN_REASON, ok, permitted, recordAdminActio
  * which requires a COMPLETED booking by the author (one review per booking, enforced by a unique
  * index). The original text is always preserved; moderation reasons are internal.
  */
-export type ModerationDecision = "keep" | "hide" | "remove" | "restore";
-
-const MODERATION: Record<ModerationDecision, { from: readonly ReviewStatus[]; to: ReviewStatus }> = {
-  keep: { from: ["FLAGGED"], to: "PUBLISHED" },
-  hide: { from: ["PUBLISHED", "FLAGGED"], to: "HIDDEN" },
-  remove: { from: ["PUBLISHED", "FLAGGED", "HIDDEN"], to: "REMOVED" },
-  restore: { from: ["HIDDEN"], to: "PUBLISHED" },
-};
-
-export function moderationTransition(decision: ModerationDecision, from: ReviewStatus): ReviewStatus | null {
-  return MODERATION[decision].from.includes(from) ? MODERATION[decision].to : null;
-}
-
 export const REVIEW_FILTERS = ["flagged", "published", "hidden", "removed", "all"] as const;
 export type ReviewFilter = (typeof REVIEW_FILTERS)[number];
 
@@ -62,8 +50,8 @@ export async function listAdminReviews({ filter, q, page }: { filter: ReviewFilt
 
 export async function moderateReview(actor: AdminActor, input: { reviewId: string; decision: unknown; reason: unknown; expectedUpdatedAt: Date | null }): Promise<AdminResult<{ status: ReviewStatus }>> {
   if (!permitted(actor, "admin:reviews:moderate")) return FORBIDDEN();
-  if (typeof input.decision !== "string" || !(input.decision in MODERATION)) return fail("invalid", "Choose a moderation decision.");
-  const decision = input.decision as ModerationDecision;
+  if (!isModerationDecision(input.decision)) return fail("invalid", "Choose a moderation decision.");
+  const decision = input.decision;
   const reason = cleanText(input.reason, 1000);
   if (reason.length < MIN_REASON) return fail("invalid", "Record a reason for this decision (at least 5 characters).");
 
