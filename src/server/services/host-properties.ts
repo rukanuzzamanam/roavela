@@ -206,6 +206,8 @@ export async function changeListingStatus(
     data: {
       status: t.to,
       ...(intent === "submit" ? { submittedAt: new Date(), rejectionReason: null } : {}),
+      // A (re)submitted or withdrawn listing goes back to the start of the admin review queue.
+      ...(intent === "submit" || intent === "withdraw" ? { reviewStartedAt: null, reviewStartedById: null } : {}),
     },
   });
   if (updated.count !== 1) return { ok: false, error: "conflict", message: "This listing changed in the meantime. Refresh and try again." };

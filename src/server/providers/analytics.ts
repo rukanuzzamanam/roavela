@@ -1,5 +1,6 @@
 import "server-only";
 import { env } from "@/server/env";
+import type { RefundReason } from "@/server/payments/refunds";
 
 /**
  * Analytics abstraction. Events are typed so every call site sends a consistent payload.
@@ -31,10 +32,22 @@ export type AnalyticsEvent =
   | { name: "payment_succeeded"; properties: { bookingId: string; provider: string; amountCents: number; currency: string } }
   | { name: "payment_failed"; properties: { bookingId: string; provider: string; failureCode?: string } }
   | { name: "booking_confirmed"; properties: { bookingId: string; propertyId: string } }
-  | { name: "booking_cancelled"; properties: { bookingId: string; by: "guest"; refundCents: number } }
-  | { name: "refund_requested"; properties: { bookingId: string; amountCents: number; reason: "guest_cancellation" | "late_payment" } }
+  | { name: "booking_cancelled"; properties: { bookingId: string; by: "guest" | "admin"; refundCents: number } }
+  | { name: "refund_requested"; properties: { bookingId: string; amountCents: number; reason: RefundReason } }
   | { name: "host_signup_started"; properties: Record<string, never> }
-  | { name: "host_listing_submitted"; properties: { propertyId: string } };
+  | { name: "host_listing_submitted"; properties: { propertyId: string } }
+  // Admin operations: identifiers and outcomes only. AdminAction remains the authoritative record.
+  | { name: "property_review_started"; properties: { propertyId: string } }
+  | { name: "property_approved"; properties: { propertyId: string } }
+  | { name: "property_changes_requested"; properties: { propertyId: string; category: string } }
+  | { name: "property_rejected"; properties: { propertyId: string; category: string } }
+  | { name: "property_suspended"; properties: { propertyId: string } }
+  | { name: "compliance_reviewed"; properties: { documentId: string; decision: string } }
+  | { name: "refund_reviewed"; properties: { bookingId: string; decision: "executed" | "declined"; amountCents: number } }
+  | { name: "host_suspended"; properties: { hostUserId: string; listingsSuspended: number } }
+  | { name: "customer_suspended"; properties: { userId: string } }
+  | { name: "account_reactivated"; properties: { userId: string } }
+  | { name: "commission_schedule_created"; properties: { scheduleId: string } };
 
 export interface AnalyticsProvider {
   track(event: AnalyticsEvent & { userId?: string }): Promise<void>;
