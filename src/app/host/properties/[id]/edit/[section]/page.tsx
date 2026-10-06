@@ -1,3 +1,4 @@
+import { COMPLIANCE_STATUS_LABELS, COMPLIANCE_TYPE_LABELS } from "@/lib/admin/compliance";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -139,13 +140,21 @@ async function SectionBody({
         strataScheme: (data("LOCAL_COMPLIANCE_ACKNOWLEDGEMENT").strataScheme as string | null) ?? null,
         strataPermissionConfirmed: data("LOCAL_COMPLIANCE_ACKNOWLEDGEMENT").strataPermissionConfirmed === true,
       };
-      const statusOf = (t: string) => byType[t]?.status;
       return (
         <div className="space-y-10">
           {p.compliance.length > 0 && (
-            <p className="rounded-2xl bg-sand-100 p-4 text-sm text-ink-soft">
-              Status: <strong>{statusOf("LOCAL_COMPLIANCE_ACKNOWLEDGEMENT") === "APPROVED" ? "Reviewed by Roavela" : "Submitted — awaiting review"}</strong>. Editing these details sends them back for review.
-            </p>
+            <div className="space-y-2 rounded-2xl bg-sand-100 p-4 text-sm text-ink-soft">
+              <p>Editing these details sends them back for review. A review means Roavela checked the information you provided — it isn&apos;t a legal verification.</p>
+              <ul className="space-y-1.5">
+                {p.compliance.map((c) => (
+                  <li key={c.id}>
+                    {COMPLIANCE_TYPE_LABELS[c.type]}: <strong>{COMPLIANCE_STATUS_LABELS[c.status].label}</strong>
+                    {/* Host-facing reviewer note only (internal admin notes are never selected here). */}
+                    {c.reviewNote && (c.status === "REJECTED" || c.status === "EXPIRED" || c.status === "APPROVED") && <span className="block text-ochre-700">Reviewer: {c.reviewNote}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           <ComplianceSection propertyId={p.id} values={values} jurisdiction={jurisdictionFor(p.countryCode, p.adminArea)} />
           {p.compliance.length > 0 && editable && (
