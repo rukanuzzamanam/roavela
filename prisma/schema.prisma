@@ -134,10 +134,24 @@ enum PayoutStatus {
   CANCELLED
 }
 
+/// PUBLISHED reviews are public. FLAGGED awaits moderation (still public until an admin decides),
+/// HIDDEN is temporarily withheld, REMOVED was taken down for a policy violation. Moderation never
+/// edits the author's text or ratings — the original is always preserved.
 enum ReviewStatus {
   PUBLISHED
   HIDDEN
   FLAGGED
+  REMOVED
+}
+
+/// A refund request sent to the payment provider. PENDING until the provider reports the outcome;
+/// SUCCEEDED/FAILED/CANCELLED mirror the provider's own refund status. Booking/payment totals are
+/// still only moved by the provider's charge.refunded event (see payments/events.ts).
+enum RefundStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELLED
 }
 
 enum DestinationKind {
@@ -220,8 +234,13 @@ model User {
   auditLogs           AuditLog[]
   reviewedCompliance  ComplianceDocument[]  @relation("ComplianceReviewer")
   feeSchedulesCreated PlatformFeeSchedule[]
+  propertiesReviewing Property[]            @relation("PropertyReviewer")
+  reviewsModerated    Review[]              @relation("ReviewModerator")
+  refundsRequested    Refund[]              @relation("RefundRequester")
+  adminNotes          AdminNote[]           @relation("AdminNoteAuthor")
 
   @@index([role, status])
+  @@index([role, createdAt])
 }
 
 /// Server-side session. Only a SHA-256 hash of the cookie token is stored.
@@ -401,32 +420,37 @@ model Property {
   ratingAverage Float?
   reviewCount   Int    @default(0)
 
-  isDemo          Boolean   @default(false)
-  submittedAt     DateTime?
-  reviewedAt      DateTime?
-  publishedAt     DateTime?
+  isDemo            Boolean   @default(false)
+  submittedAt       DateTime?
+  reviewedAt        DateTime?
+  publishedAt       DateTime?
   /// Latest reviewer feedback shown to the host (reason for REJECTED or CHANGES_REQUESTED).
   /// Full review history lives in AdminAction.
-  rejectionReason String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  rejectionReason   String?
+  /// Set when an admin opens the review of a PENDING_REVIEW listing ("under review"); cleared on resubmission.
+  reviewStartedAt   DateTime?
+  reviewStartedById String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  host         HostProfile          @relation(fields: [hostId], references: [id], onDelete: Restrict)
-  destination  Destination?         @relation(fields: [destinationId], references: [id], onDelete: Restrict)
-  images       PropertyImage[]
-  amenities    PropertyAmenity[]
-  availability Availability[]
-  blockedDates BlockedDate[]
-  bookings     Booking[]
-  reviews      Review[]
-  favourites   Favourite[]
-  compliance   ComplianceDocument[]
+  reviewStartedBy User?                @relation("PropertyReviewer", fields: [reviewStartedById], references: [id], onDelete: SetNull)
+  host            HostProfile          @relation(fields: [hostId], references: [id], onDelete: Restrict)
+  destination     Destination?         @relation(fields: [destinationId], references: [id], onDelete: Restrict)
+  images          PropertyImage[]
+  amenities       PropertyAmenity[]
+  availability    Availability[]
+  blockedDates    BlockedDate[]
+  bookings        Booking[]
+  reviews         Review[]
+  favourites      Favourite[]
+  compliance      ComplianceDocument[]
 
   @@index([status, destinationId])
   @@index([status, nightlyPriceCents])
   @@index([status, maxGuests])
   @@index([hostId])
   @@index([latitude, longitude])
+  @@index([status, submittedAt])
 }
 
 model PropertyImage {
@@ -550,12 +574,15 @@ model Booking {
   payments    Payment[]
   payouts     Payout[]
   review      Review?
+  refunds     Refund[]
 
   @@index([propertyId, checkIn, checkOut])
   @@index([propertyId, status])
   @@index([guestId, createdAt])
   @@index([status, checkIn])
   @@index([status, expiresAt])
+  @@index([confirmedAt])
+  @@index([createdAt])
 }
 
 model Payment {
@@ -574,12 +601,43 @@ model Payment {
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
-  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  booking Booking  @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  refunds Refund[]
 
   @@unique([provider, providerPaymentId])
   /// One payment record per booking per provider: repeated clicks/retries reuse it (idempotency).
   @@unique([bookingId, provider])
-  @@index([status])
+  @@index([status, createdAt])
+}
+
+/// One row per refund sent to the payment provider (guest cancellations, late payments and admin
+/// refunds alike). `idempotencyKey` is unique, so a repeated click or retried request can never create
+/// a second refund, and the same key is sent to the provider. A CHECK constraint keeps amounts positive.
+model Refund {
+  id               String       @id @default(cuid())
+  paymentId        String
+  bookingId        String
+  amountCents      Int
+  currency         String       @db.Char(3)
+  status           RefundStatus @default(PENDING)
+  /// "guest_cancellation" | "late_payment" | "admin_cancellation" | "admin_refund"
+  reason           String
+  idempotencyKey   String       @unique
+  providerRefundId String?      @unique
+  /// The admin who executed it; null for automatic refunds (guest cancellation, late payment).
+  requestedById    String?
+  failureCode      String?
+  confirmedAt      DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  payment     Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  booking     Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  requestedBy User?   @relation("RefundRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+
+  @@index([paymentId])
+  @@index([bookingId])
+  @@index([status, createdAt])
 }
 
 /// Every payment-provider webhook delivery we accept, for de-duplication and audit. Stores the event
@@ -656,16 +714,22 @@ model Review {
   body                String
   hostResponse        String?
   status              ReviewStatus @default(PUBLISHED)
+  /// Latest moderation decision. INTERNAL — never shown to the author, host or public.
+  moderatedAt         DateTime?
+  moderatedById       String?
+  moderationReason    String?
   isDemo              Boolean      @default(false)
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 
-  booking  Booking  @relation(fields: [bookingId], references: [id], onDelete: Restrict)
-  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  author   User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  property    Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  author      User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  moderatedBy User?    @relation("ReviewModerator", fields: [moderatedById], references: [id], onDelete: SetNull)
 
   @@index([propertyId, status, createdAt])
   @@index([authorId])
+  @@index([status, createdAt])
 }
 
 model Favourite {
@@ -740,6 +804,8 @@ model ComplianceDocument {
   @@unique([propertyId, type])
   @@index([hostId, type])
   @@index([status, submittedAt])
+  @@index([referenceNumber])
+  @@index([expiresAt])
 }
 
 /// Append-only audit log of administrative actions.
@@ -757,6 +823,24 @@ model AdminAction {
 
   @@index([targetType, targetId])
   @@index([adminId, createdAt])
+  @@index([createdAt])
+  @@index([action, createdAt])
+}
+
+/// Internal admin note on a Property, User or Booking. INTERNAL ONLY: never selected by any host,
+/// customer or public query. Host/customer-facing messages live elsewhere (e.g.
+/// Property.rejectionReason, ComplianceDocument.reviewNote). Append-only.
+model AdminNote {
+  id         String   @id @default(cuid())
+  authorId   String
+  targetType String // "Property" | "User" | "Booking"
+  targetId   String
+  body       String
+  createdAt  DateTime @default(now())
+
+  author User @relation("AdminNoteAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([targetType, targetId, createdAt])
 }
 
 /// Append-only log of significant non-admin actions (e.g. host created/submitted/paused a listing).
@@ -774,4 +858,5 @@ model AuditLog {
 
   @@index([targetType, targetId, createdAt])
   @@index([actorId, createdAt])
+  @@index([createdAt])
 }
